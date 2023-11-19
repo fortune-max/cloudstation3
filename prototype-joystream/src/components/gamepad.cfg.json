@@ -2,17 +2,133 @@
     "defaultCfg": {
         "button":{
             "0": {
+                "name": "A",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 304
+                }
+            },
+            "1": {
+                "name": "B",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 305
+                }
+            },
+            "2": {
                 "name": "X",
                 "in": {
                     "type": "button"
                 },
                 "out": {
                     "type": 1,
-                    "code": 0
+                    "code": 307
+                }
+            },
+            "3": {
+                "name": "Y",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 308
+                }
+            },
+            "4": {
+                "name": "LB",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 310
+                }
+            },
+            "5": {
+                "name": "RB",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 311
+                }
+            },
+            "6": {
+                "name": "Select",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 314
+                }
+            },
+            "7": {
+                "name": "Start",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 315
+                }
+            },
+            "8": {
+                "name": "XBox Button",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 316
+                }
+            },
+            "9": {
+                "name": "Left Analog Button",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 317
+                }
+            },
+            "10": {
+                "name": "Right Analog Button",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 318
                 }
             }
         },
         "axis": {
+            "2": {
+                "name": "L2",
+                "in": {
+                    "type": "axis",
+                    "initial": -1,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 2,
+                    "initial": 0,
+                    "min": 0,
+                    "max": 1023
+                }
+            },
             "5": {
                 "name": "R2",
                 "in": {
@@ -23,7 +139,7 @@
                 },
                 "out": {
                     "type": 3,
-                    "code": 0,
+                    "code": 5,
                     "initial": 0,
                     "min": 0,
                     "max": 1023
@@ -39,13 +155,28 @@
                 },
                 "out": {
                     "type": 3,
-                    "code": 0,
+                    "code": 16,
                     "initial": 0,
-                    "min": -32767,
-                    "max": 32767
+                    "min": -1,
+                    "max": 1
                 }
             },
-
+            "7": {
+                "name": "DPAD U,D",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 17,
+                    "initial": 0,
+                    "min": -1,
+                    "max": 1
+                }
+            },
             "0": {
                 "name": "Left Analog Up,Down",
                 "in": {
@@ -72,7 +203,39 @@
                 },
                 "out": {
                     "type": 3,
-                    "code": 0,
+                    "code": 1,
+                    "initial": 0,
+                    "min": -32767,
+                    "max": 32767
+                }
+            },
+            "3": {
+                "name": "Right Analog Up,Down",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 3,
+                    "initial": 0,
+                    "min": -32767,
+                    "max": 32767
+                }
+            },
+            "4": {
+                "name": "Right Analog Left,Right",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 4,
                     "initial": 0,
                     "min": -32767,
                     "max": 32767

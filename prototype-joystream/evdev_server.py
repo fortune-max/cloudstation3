@@ -20,14 +20,14 @@ device_capabilities = {
         evdev.ecodes.BTN_THUMBR,  # Right joystick button (318)
     ],
     evdev.ecodes.EV_ABS: [  # Absolute axis events
-        (evdev.ecodes.ABS_X, evdev.AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # left analog X axis
-        (evdev.ecodes.ABS_Y, evdev.AbsInfo(value=-1, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # left analog Y axis
-        (evdev.ecodes.ABS_Z, evdev.AbsInfo(value=0, min=0, max=1023, fuzz=0, flat=15, resolution=0)),  # L2, Z axis
-        (evdev.ecodes.ABS_RX, evdev.AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # right analog RX axis
-        (evdev.ecodes.ABS_RY, evdev.AbsInfo(value=-1, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # right analog RY axis
-        (evdev.ecodes.ABS_RZ, evdev.AbsInfo(value=0, min=0, max=1023, fuzz=0, flat=15, resolution=0)),  # R2, RZ axis
-        (evdev.ecodes.ABS_HAT0X, evdev.AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),  # D-pad X axis
-        (evdev.ecodes.ABS_HAT0Y, evdev.AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),  # D-pad Y axis
+        (evdev.ecodes.ABS_X, evdev.AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # left analog X axis (0)
+        (evdev.ecodes.ABS_Y, evdev.AbsInfo(value=-1, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # left analog Y axis (1)
+        (evdev.ecodes.ABS_Z, evdev.AbsInfo(value=0, min=0, max=1023, fuzz=0, flat=15, resolution=0)),  # L2, Z axis (2)
+        (evdev.ecodes.ABS_RX, evdev.AbsInfo(value=0, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # right analog RX axis (3)
+        (evdev.ecodes.ABS_RY, evdev.AbsInfo(value=-1, min=-32768, max=32767, fuzz=16, flat=128, resolution=0)),  # right analog RY axis (4)
+        (evdev.ecodes.ABS_RZ, evdev.AbsInfo(value=0, min=0, max=1023, fuzz=0, flat=15, resolution=0)),  # R2, RZ axis (5)
+        (evdev.ecodes.ABS_HAT0X, evdev.AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),  # D-pad X axis (16)
+        (evdev.ecodes.ABS_HAT0Y, evdev.AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)),  # D-pad Y axis (17)
     ]
 }
 
@@ -42,8 +42,10 @@ def write_event(type, code, value):
 async def handle_connection(websocket, path):
     while True:
         message = await websocket.recv()
-        for chunk in json.loads(message):
+        chunks = json.loads(message)
+        for chunk in chunks:
             write_event(chunk["type"], chunk["code"], chunk["value"])
+        print("processed incoming chunk:", len(chunks))
         await websocket.send("OK")
 
 start_server = websockets.serve(handle_connection, '0.0.0.0', 8765)

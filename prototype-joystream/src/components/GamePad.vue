@@ -30,6 +30,7 @@ function currentGamepad() {
 }
 
 let oldState = currentGamepad();
+let socket = new WebSocket("ws://192.168.1.163:8765");
 
 function animate() {
   const newState = currentGamepad();
@@ -43,8 +44,8 @@ function animate() {
       chunk.push(transformAxis(newState.axes[axisIdx], axesMap[axisIdx].in, axesMap[axisIdx].out));
     });
     if (chunk.length){
-      // send chunk to server
-      console.log('Chunk', chunk)
+      console.log('Sent', chunk.length, 'events')
+      socket.send(JSON.stringify(chunk));
     };
   }
   oldState = newState;
