@@ -1,7 +1,9 @@
 # sudo -E python3 evdev_server.py
 
+import json
 import evdev
-import time
+import asyncio
+import websockets
 
 device_capabilities = {
     evdev.ecodes.EV_KEY: [
@@ -31,11 +33,20 @@ device_capabilities = {
 
 device = evdev.UInput(events=device_capabilities, name="Emulated Joystick")
 
-while True:
-    print("Sending A key")
-    device.write(evdev.ecodes.EV_KEY, evdev.ecodes.BTN_SOUTH, 1)  # Press the A key
+
+def write_event(type, code, value):
+    device.write(type, code, value)
     device.syn()
-    time.sleep(1)
-    device.write(evdev.ecodes.EV_KEY, evdev.ecodes.BTN_SOUTH, 0)  # Release the A key
-    device.syn()
-    time.sleep(4)
+
+
+async def handle_connection(websocket, path):
+    while True:
+        message = await websocket.recv()
+        for chunk in json.loads(message):
+            write_event(chunk["type"], chunk["code"], chunk["value"])
+        await websocket.send("OK")
+
+start_server = websockets.serve(handle_connection, '0.0.0.0', 8765)
+
+asyncio.get_event_loop().run_until_complete(start_server)
+asyncio.get_event_loop().run_forever()
