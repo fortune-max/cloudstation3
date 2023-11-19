@@ -1,0 +1,83 @@
+{
+    "defaultCfg": {
+        "button":{
+            "0": {
+                "name": "X",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 0
+                }
+            }
+        },
+        "axis": {
+            "5": {
+                "name": "R2",
+                "in": {
+                    "type": "axis",
+                    "initial": -1,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 0,
+                    "initial": 0,
+                    "min": 0,
+                    "max": 1023
+                }
+            },
+            "6": {
+                "name": "DPAD L,R",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 0,
+                    "initial": 0,
+                    "min": -32767,
+                    "max": 32767
+                }
+            },
+
+            "0": {
+                "name": "Left Analog Up,Down",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 0,
+                    "initial": 0,
+                    "min": -32767,
+                    "max": 32767
+                }
+            },
+            "1": {
+                "name": "Left Analog Left,Right",
+                "in": {
+                    "type": "axis",
+                    "initial": 0,
+                    "max": 1,
+                    "min": -1
+                },
+                "out": {
+                    "type": 3,
+                    "code": 0,
+                    "initial": 0,
+                    "min": -32767,
+                    "max": 32767
+                }
+            }
+        }
+    }
+}
