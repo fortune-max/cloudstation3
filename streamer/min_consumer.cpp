@@ -2,6 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -24,7 +25,7 @@ void consume_frames() {
         return;
     }
 
-    for (int i=0; i<100; i++) {
+    for (int i=0; i<10; i++) {
         cout << "Waiting for frame" << "\n";
         sem_wait(sem_full);
 

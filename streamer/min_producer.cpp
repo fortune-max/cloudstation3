@@ -2,6 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <fcntl.h>
 
 using namespace std;
 
