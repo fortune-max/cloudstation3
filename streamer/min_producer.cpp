@@ -18,8 +18,8 @@ void produce_frames() {
     uint8_t* shm_ptr = (uint8_t*)mmap(0, SHM_SIZE, PROT_WRITE, MAP_SHARED, shm_fd, 0);
 
     // clear semaphores
-    // cout << sem_unlink(SEM_EMPTY) << endl;
-    // cout << sem_unlink(SEM_FULL) << endl;
+    cout << sem_unlink(SEM_EMPTY) << endl;
+    cout << sem_unlink(SEM_FULL) << endl;
 
     // Initialize semaphores
     sem_t *sem_empty = sem_open(SEM_EMPTY, O_CREAT, 0666, 1);
