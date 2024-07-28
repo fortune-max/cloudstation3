@@ -1,5 +1,11 @@
 #include <rtc/rtc.hpp>
 #include <nlohmann/json.hpp>
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+}
 
 using namespace std;
 using namespace rtc;
