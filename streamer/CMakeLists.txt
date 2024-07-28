@@ -16,6 +16,9 @@ FetchContent_Declare(
         GIT_TAG v0.21.2 # Specify the version of libdatachannel you want to use
 )
 
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fPIC" )
+set(CMAKE_C_FLAGS  "${CMAKE_C_FLAGS} -fPIC" )
+
 FetchContent_MakeAvailable(libsrtp)
 FetchContent_MakeAvailable(libdatachannel)
 

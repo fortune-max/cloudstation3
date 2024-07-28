@@ -1,3 +1,4 @@
+#include <thread>
 #include <unistd.h>
 #include <rtc/rtc.hpp>
 #include <nlohmann/json.hpp>
@@ -15,6 +16,9 @@ using namespace std;
 using namespace rtc;
 using namespace nlohmann;
 
+#undef av_err2str
+#define av_err2str(errnum) av_make_error_string((char*)__builtin_alloca(AV_ERROR_MAX_STRING_SIZE), AV_ERROR_MAX_STRING_SIZE, errnum)
+
 void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     uint8_t* in_data[4]{};
     int in_line[4]{};
@@ -29,17 +33,23 @@ void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
         SWS_BILINEAR, nullptr, nullptr, nullptr
     );
 
-    av_frame_make_writable(out_frame);
-    sws_scale(
+    int res = sws_scale(
         sws_ctx, in_data, in_line,
         0, 720,
         out_frame->data, out_frame->linesize
     );
-    cout << "converted" << endl;
+    if (res < 0) {
+        cerr << "Error scaling-converting: " << av_err2str(res) << endl;
+        return;
+    }
 }
 
 void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame) { //, std::shared_ptr<rtc::Track> &videoTrack) {
     AVPacket* packet = av_packet_alloc();
+    if (!packet) {
+        std::cerr << "Could not allocate AVPacket" << std::endl;
+        return;
+    }
 
     int ret = avcodec_send_frame(codecContext, frame);
     if (ret < 0) {
@@ -170,43 +180,27 @@ int main() {
         codecContext->height, codecContext->pix_fmt, 32
     );
 
+
+    const auto *shmName = "/vectframe_shm";
+    const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
+
+    if (shm_fd == -1) {
+        cerr << "Failed to open shared memory: " << shmName << endl;
+        return -1;
+    }
+
+    constexpr int SHM_SIZE = 1280 * 720 * 4;
+    const auto shm_ptr = static_cast<uint8_t*>(mmap(nullptr, SHM_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0));
+    if (shm_ptr == MAP_FAILED) {
+        cerr << "Failed to map shared memory" << endl;
+        close(shm_fd);
+        return -1;
+    }
+
+    vector<uint8_t> curr_frame(SHM_SIZE, 0);
     while (true) {
-        // std::ifstream videoFile(file, std::ios::binary);
-        //
-        // if (!videoFile.is_open()) {
-        //     std::cerr << "Failed to open video file" << std::endl;
-        //     continue;
-        // }
-        //
-        // // Read the entire file
-        // std::vector<char> buffer((std::istreambuf_iterator<char>(videoFile)), std::istreambuf_iterator<char>());
-        // videoFile.close();
-
-        // Convert BGRA to YUV420P
-        // BGRA to YUV conversion logic here (omitted for brevity)
-        const char *shmName = "/vectframe_shm";
-        cout << "aaa" << endl;
-        int shm_fd = shm_open(shmName, O_RDONLY, 0666);
-        cout << "bbb" << endl;
-
-        if (shm_fd == -1) {
-            cerr << "Failed to open shared memory: " << shmName << endl;
-            return -1;
-        }
-
-        constexpr int SHM_SIZE = 1280 * 720 * 4;
-        auto shm_ptr = static_cast<uint8_t*>(mmap(nullptr, SHM_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0));
-        if (shm_ptr == MAP_FAILED) {
-            cerr << "Failed to map shared memory" << endl;
-            close(shm_fd);
-            return -1;
-        }
-        cout << "ccc" << endl;
-
-        vector<uint8_t> curr_frame(0, SHM_SIZE);
         for (int j=0; j<SHM_SIZE; j++)
             curr_frame[j] = shm_ptr[j];
-
         lol(curr_frame, frame);
 
         encodeAndSendFrame(codecContext, frame);
