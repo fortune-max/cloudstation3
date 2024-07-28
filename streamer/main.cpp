@@ -1,7 +1,3 @@
-#include <iostream>
-#include <fstream>
-#include <thread>
-#include <chrono>
 #include <rtc/rtc.hpp>
 #include <nlohmann/json.hpp>
 
@@ -28,14 +24,14 @@ int main() {
 
             if (type == "offer") {
                 pc = make_shared<PeerConnection>(config);
-                pc->onLocalDescription([&ws](Description description) {
+                pc->onLocalDescription([&ws](const Description& description) {
 		            json message = {
 		                {"type", "answer"},
 		                {"sdp", string(description)}
                     };
                     ws.send(message.dump());
 	            });
-                pc->onLocalCandidate([&ws](Candidate candidate) {
+                pc->onLocalCandidate([&ws](const Candidate& candidate) {
                     json message = {
                         {"type", "candidate"},
                         {"candidate", string(candidate)},
@@ -49,7 +45,7 @@ int main() {
                 pc->onGatheringStateChange([](PeerConnection::GatheringState state) {
 		            cout << "Gathering State: " << state << endl;
 	            });
-                pc->onTrack([](shared_ptr<Track> track) {
+                pc->onTrack([](const shared_ptr<Track>& track) {
                     cout << "Track: " << track->mid() << endl;
                 });
 
@@ -75,6 +71,4 @@ int main() {
     while (true) {
         this_thread::sleep_for(chrono::seconds(1));
     }
-
-    return 0;
 }
