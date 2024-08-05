@@ -44,7 +44,7 @@ void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     }
 }
 
-void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame) { //, std::shared_ptr<rtc::Track> &videoTrack) {
+void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::shared_ptr<rtc::Track> &videoTrack) {
     AVPacket* packet = av_packet_alloc();
     if (!packet) {
         std::cerr << "Could not allocate AVPacket" << std::endl;
@@ -65,74 +65,94 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame) { //, std:
             std::cerr << "Error encoding frame: " << av_err2str(ret) << std::endl;
             break;
         }
+        cout << "Sending frames: " << packet->size << endl;
 
-        // videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size);
+        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size);
         av_packet_unref(packet);
     }
 }
 
 int main() {
-    // InitLogger(LogLevel::Info);
-    //
-    // WebSocket ws;
-    // Configuration config;
-    // config.iceServers.emplace_back("stun.l.google.com:19302");
-    // shared_ptr<PeerConnection> pc;
-    // // auto pc = std::make_shared<rtc::PeerConnection>(config);
-    //
-    // ws.onOpen([]() { cout << "WebSocket open" << endl; });
-    //
-    // ws.onMessage([&config, &pc, &ws](variant<binary, string> message) {
-    //     if (holds_alternative<string>(message)) {
-    //         auto msg_json = json::parse(get<string>(message));
-    //         auto type = msg_json["type"].get<string>();
-    //         cout << "type: " << type << endl;
-    //
-    //         if (type == "offer") {
-    //             pc = make_shared<PeerConnection>(config);
-    //             pc->onLocalDescription([&ws](const Description& description) {
-		  //           json message = {
-		  //               {"type", "answer"},
-		  //               {"sdp", string(description)}
-    //                 };
-    //                 ws.send(message.dump());
-	   //          });
-    //             pc->onLocalCandidate([&ws](const Candidate& candidate) {
-    //                 json message = {
-    //                     {"type", "candidate"},
-    //                     {"candidate", string(candidate)},
-    //                     {"mid", candidate.mid()}
-    //                 };
-    //                 ws.send(message.dump());
-    //             });
-    //             pc->onStateChange([](PeerConnection::State state) {
-    //                 cout << "State: " << state << endl;
-    //             });
-    //             pc->onGatheringStateChange([](PeerConnection::GatheringState state) {
-		  //           cout << "Gathering State: " << state << endl;
-	   //          });
-    //             pc->onTrack([](const shared_ptr<Track>& track) {
-    //                 cout << "Track: " << track->mid() << endl;
-    //             });
-    //
-    //             Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
-    //             pc->setRemoteDescription(offer);
-    //         } else if (type == "candidate") {
-    //             json candidate_json = msg_json["candidate"];
-    //             Candidate candidate(candidate_json["candidate"].get<string>(), candidate_json["sdpMid"].get<string>());
-    //             if (candidate.family() != Candidate::Family::Unresolved) {
-    //                 cout << "Remote Candidate: " << candidate.candidate() << endl;
-    //                 pc->addRemoteCandidate(candidate);
-    //             }
-    //         } else {
-    //             cerr << "[Type not handled]: " << type << endl;
-    //         }
-    //     } else {
-    //         cerr << "[WS message not handled]: " << get<binary>(message).size() << endl;
-    //     }
-    // });
-    //
-    // ws.open("ws://localhost:8088");
+    InitLogger(LogLevel::Info);
+
+    WebSocket ws;
+    Configuration config;
+    config.iceServers.emplace_back("stun.l.google.com:19302");
+    shared_ptr<PeerConnection> pc;
+    shared_ptr<Track> track;
+    bool trackOpen = false;
+    // auto pc = std::make_shared<rtc::PeerConnection>(config);
+
+    ws.onOpen([]() { cout << "WebSocket open" << endl; });
+
+    ws.onMessage([&config, &pc, &ws, &track, &trackOpen](variant<binary, string> message) {
+        if (holds_alternative<string>(message)) {
+            auto msg_json = json::parse(get<string>(message));
+            auto type = msg_json["type"].get<string>();
+            cout << "type: " << type << endl;
+
+            if (type == "offer") {
+                pc = make_shared<PeerConnection>(config);
+                pc->onLocalDescription([&ws](const Description& description) {
+		            json message = {
+		                {"type", "answer"},
+		                {"sdp", string(description)}
+                    };
+                    ws.send(message.dump());
+	            });
+                pc->onLocalCandidate([&ws](const Candidate& candidate) {
+                    json message = {
+                        {"type", "candidate"},
+                        {"candidate", string(candidate)},
+                        {"mid", candidate.mid()}
+                    };
+                    ws.send(message.dump());
+                });
+                pc->onStateChange([](PeerConnection::State state) {
+                    cout << "State: " << state << endl;
+                });
+                pc->onGatheringStateChange([](PeerConnection::GatheringState state) {
+		            cout << "Gathering State: " << state << endl;
+	            });
+                pc->onTrack([](const shared_ptr<Track>& track) {
+                    cout << "Track: " << track->mid() << endl;
+                });
+
+                const rtc::SSRC ssrc = 42;
+                rtc::Description::Video media("video", rtc::Description::Direction::SendOnly);
+                media.addH264Codec(96); // maybe 102
+                media.addSSRC(ssrc, "video-send");
+                track = pc->addTrack(media);
+                track->onOpen([&trackOpen] {trackOpen = true;});
+                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, "video-stream", 96, H264RtpPacketizer::defaultClockRate);
+                auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
+                // add RTCP SR handler
+                auto srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+                packetizer->addToChain(srReporter);
+                // add RTCP NACK handler
+                auto nackResponder = make_shared<RtcpNackResponder>();
+                packetizer->addToChain(nackResponder);
+                track->setMediaHandler(packetizer);
+
+                Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
+                pc->setRemoteDescription(offer);
+
+            } else if (type == "candidate") {
+                json candidate_json = msg_json["candidate"];
+                Candidate candidate(candidate_json["candidate"].get<string>(), candidate_json["sdpMid"].get<string>());
+                if (candidate.family() != Candidate::Family::Unresolved) {
+                    cout << "Remote Candidate: " << candidate.candidate() << endl;
+                    pc->addRemoteCandidate(candidate);
+                }
+            } else {
+                cerr << "[Type not handled]: " << type << endl;
+            }
+        } else {
+            cerr << "[WS message not handled]: " << get<binary>(message).size() << endl;
+        }
+    });
+
+    ws.open("ws://6.tcp.eu.ngrok.io:12204");
 
     // while (true) {
     //     this_thread::sleep_for(chrono::seconds(1));
@@ -203,7 +223,8 @@ int main() {
             curr_frame[j] = shm_ptr[j];
         lol(curr_frame, frame);
 
-        encodeAndSendFrame(codecContext, frame);
+        if (trackOpen)
+            encodeAndSendFrame(codecContext, frame, track);
         std::this_thread::sleep_for(std::chrono::milliseconds(40)); // Simulate 25 FPS
     }
 
