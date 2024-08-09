@@ -211,8 +211,11 @@ int main() {
     );
 
 
-    const auto *shmName = "/vectframe_shm";
-    const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
+    // const auto *shmName = "/vectframe_shm";
+    // const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
+
+    auto shmName = "/tmp/vectframe_shm";
+    const int shm_fd = open(shmName, O_RDONLY);
 
     if (shm_fd == -1) {
         cerr << "Failed to open shared memory: " << shmName << endl;
