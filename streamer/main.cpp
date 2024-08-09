@@ -19,6 +19,13 @@ using namespace nlohmann;
 #undef av_err2str
 #define av_err2str(errnum) av_make_error_string((char*)__builtin_alloca(AV_ERROR_MAX_STRING_SIZE), AV_ERROR_MAX_STRING_SIZE, errnum)
 
+static int64_t frame_number = 0;
+static uint64_t timestamp_start = 0;
+
+uint64_t secondsSinceEpoch() {
+    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     uint8_t* in_data[4]{};
     int in_line[4]{};
@@ -38,13 +45,16 @@ void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
         0, 720,
         out_frame->data, out_frame->linesize
     );
+
+    int64_t frame_duration = AV_TIME_BASE;
+    out_frame->pts = frame_number++ * frame_duration;
+
     if (res < 0) {
         cerr << "Error scaling-converting: " << av_err2str(res) << endl;
-        return;
     }
 }
 
-void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::shared_ptr<rtc::Track> &videoTrack) {
+void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::shared_ptr<rtc::Track> &videoTrack, std::shared_ptr<RtcpSrReporter> &srReporter) {
     AVPacket* packet = av_packet_alloc();
     if (!packet) {
         std::cerr << "Could not allocate AVPacket" << std::endl;
@@ -67,7 +77,17 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::share
         }
         cout << "Sending frames: " << packet->size << endl;
 
-        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size);
+        uint32_t elapsedSeconds = secondsSinceEpoch() - timestamp_start;
+        uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
+        srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp + elapsedTimestamp;
+
+        auto reportElapsedTimestamp = srReporter->rtpConfig->timestamp - srReporter->lastReportedTimestamp();
+
+        if (srReporter->rtpConfig->timestampToSeconds(reportElapsedTimestamp) >= 1) {
+            srReporter->setNeedsToReport();
+        }
+
+        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
         av_packet_unref(packet);
     }
 }
@@ -78,65 +98,58 @@ int main() {
     WebSocket ws;
     Configuration config;
     config.iceServers.emplace_back("stun.l.google.com:19302");
-    shared_ptr<PeerConnection> pc;
     shared_ptr<Track> track;
+    shared_ptr<RtcpSrReporter> srReporter;
     bool trackOpen = false;
-    // auto pc = std::make_shared<rtc::PeerConnection>(config);
+    auto pc = std::make_shared<rtc::PeerConnection>(config);
+
+    pc->onLocalCandidate([&ws](const Candidate& candidate) {
+        json message = {
+            {"type", "candidate"},
+            {"candidate", string(candidate)},
+            {"mid", candidate.mid()}
+        };
+        ws.send(message.dump());
+    });
+    pc->onStateChange([](PeerConnection::State state) {
+        cout << "State: " << state << endl;
+    });
 
     ws.onOpen([]() { cout << "WebSocket open" << endl; });
 
-    ws.onMessage([&config, &pc, &ws, &track, &trackOpen](variant<binary, string> message) {
+    ws.onMessage([&config, &pc, &ws, &track, &trackOpen, &srReporter](variant<binary, string> message) {
         if (holds_alternative<string>(message)) {
             auto msg_json = json::parse(get<string>(message));
             auto type = msg_json["type"].get<string>();
             cout << "type: " << type << endl;
 
             if (type == "offer") {
-                pc = make_shared<PeerConnection>(config);
                 pc->onLocalDescription([&ws](const Description& description) {
-		            json message = {
-		                {"type", "answer"},
-		                {"sdp", string(description)}
-                    };
-                    ws.send(message.dump());
-	            });
-                pc->onLocalCandidate([&ws](const Candidate& candidate) {
                     json message = {
-                        {"type", "candidate"},
-                        {"candidate", string(candidate)},
-                        {"mid", candidate.mid()}
+                        {"type", "answer"},
+                        {"sdp", string(description)}
                     };
                     ws.send(message.dump());
-                });
-                pc->onStateChange([](PeerConnection::State state) {
-                    cout << "State: " << state << endl;
-                });
-                pc->onGatheringStateChange([](PeerConnection::GatheringState state) {
-		            cout << "Gathering State: " << state << endl;
-	            });
-                pc->onTrack([](const shared_ptr<Track>& track) {
-                    cout << "Track: " << track->mid() << endl;
                 });
 
-                const rtc::SSRC ssrc = 42;
-                rtc::Description::Video media("video", rtc::Description::Direction::SendOnly);
-                media.addH264Codec(96); // maybe 102
-                media.addSSRC(ssrc, "video-send");
+                const SSRC ssrc = 1;
+                const string cname = "0";
+                auto media = Description::Video(cname, Description::Direction::SendOnly);
+                media.addH264Codec(102); // maybe 102 or 96
+                media.addSSRC(ssrc, cname, "stream1", cname);
                 track = pc->addTrack(media);
-                track->onOpen([&trackOpen] {trackOpen = true;});
-                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, "video-stream", 96, H264RtpPacketizer::defaultClockRate);
+                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
                 auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
-                // add RTCP SR handler
-                auto srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+                srReporter = make_shared<RtcpSrReporter>(rtpConfig);
                 packetizer->addToChain(srReporter);
-                // add RTCP NACK handler
                 auto nackResponder = make_shared<RtcpNackResponder>();
                 packetizer->addToChain(nackResponder);
+
+                track->onOpen([&trackOpen] {trackOpen = true;});
                 track->setMediaHandler(packetizer);
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
                 pc->setRemoteDescription(offer);
-
             } else if (type == "candidate") {
                 json candidate_json = msg_json["candidate"];
                 Candidate candidate(candidate_json["candidate"].get<string>(), candidate_json["sdpMid"].get<string>());
@@ -152,15 +165,12 @@ int main() {
         }
     });
 
-    ws.open("ws://6.tcp.eu.ngrok.io:12204");
-
-    // while (true) {
-    //     this_thread::sleep_for(chrono::seconds(1));
-    // }
+    ws.open("ws://7.tcp.eu.ngrok.io:15906");
 
     avformat_network_init();
 
-    const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
+    // const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
+    const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
     if (!codec) {
         cerr << "Codec 'h264_nvenc' not found" << endl;
         return -1;
@@ -218,14 +228,19 @@ int main() {
     }
 
     vector<uint8_t> curr_frame(SHM_SIZE, 0);
+    while (!trackOpen) {
+        this_thread::sleep_for(chrono::milliseconds(100));
+    }
+    timestamp_start = secondsSinceEpoch();
+
     while (true) {
         for (int j=0; j<SHM_SIZE; j++)
             curr_frame[j] = shm_ptr[j];
         lol(curr_frame, frame);
 
         if (trackOpen)
-            encodeAndSendFrame(codecContext, frame, track);
-        std::this_thread::sleep_for(std::chrono::milliseconds(40)); // Simulate 25 FPS
+            encodeAndSendFrame(codecContext, frame, track, srReporter);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Simulate 25 FPS
     }
 
 
