@@ -199,9 +199,10 @@ int main() {
 
     avformat_network_init();
 
-    // const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
+    const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
     // const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
-    const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+    // const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
+
     if (!codec) {
         cerr << "Codec 'h264_nvenc' not found" << endl;
         return -1;
@@ -221,14 +222,9 @@ int main() {
     codecContext->gop_size = 10;
     codecContext->max_b_frames = 0;
     codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
-    
-    // set H264 baseline profile
+
     av_opt_set(codecContext->priv_data, "profile", "baseline", 0);
-
-    // Set level to 3.1
     av_opt_set(codecContext->priv_data, "level", "3.1", 0);
-
-    // Set packetization mode to 1 (non-interleaved mode)
     av_opt_set(codecContext->priv_data, "packetization-mode", "1", 0);
 
 
@@ -252,11 +248,11 @@ int main() {
     );
 
 
-    // const auto *shmName = "/vectframe_shm";
-    // const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
+    const auto *shmName = "/vectframe_shm";
+    const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
 
-    auto shmName = "/tmp/vectframe_shm";
-    const int shm_fd = open(shmName, O_RDONLY);
+    // auto shmName = "/tmp/vectframe_shm";
+    // const int shm_fd = open(shmName, O_RDONLY);
 
     if (shm_fd == -1) {
         cerr << "Failed to open shared memory: " << shmName << endl;
