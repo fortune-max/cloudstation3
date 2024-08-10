@@ -15,6 +15,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
 #include <libswscale/swscale.h>
 }
 
@@ -37,36 +38,6 @@ using namespace nlohmann;
 
 static int64_t frame_number = 0;
 static uint64_t timestamp_start = 0;
-
-
-void getRTPPacket(std::shared_ptr<rtc::Track> &videoTrack){
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in addr = {};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("192.168.1.252");
-    addr.sin_port = htons(6000);
-
-    if (::bind(sock, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) < 0)
-        throw std::runtime_error("Failed to bind UDP socket on 192.168.1.252:6000");
-
-    int rcvBufSize = 212992;
-    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char *>(&rcvBufSize),
-               sizeof(rcvBufSize));
-
-    const int BUFFER_SIZE = 2048;
-    char buffer[BUFFER_SIZE];
-    int len;
-    while ((len = recv(sock, buffer, BUFFER_SIZE, 0)) >= 0) {
-        if (len < sizeof(rtc::RtpHeader) || !videoTrack->isOpen())
-            continue;
-
-        auto rtp = reinterpret_cast<rtc::RtpHeader *>(buffer);
-        rtp->setSsrc(1);
-
-        videoTrack->send(reinterpret_cast<const std::byte *>(buffer), len);
-    }
-}
-
 
 uint64_t secondsSinceEpoch() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -133,7 +104,20 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::share
             srReporter->setNeedsToReport();
         }
 
-        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
+        vector<byte> pkt_data(packet->size);
+        for (int i = 0; i < packet->size; i++)
+            pkt_data[i] = byte(packet->data[i]);
+
+        // videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
+        videoTrack->send(pkt_data);
+
+        // if (packet->size == 11570) {
+            // FILE *file = fopen("/tmp/fme/pkt_baseline2.h264", "ab");
+            // fwrite(packet->data, sizeof(std::byte), packet->size, file);
+            // fclose(file);
+            // exit(0);
+        // }
+        
         av_packet_unref(packet);
     }
 }
@@ -186,14 +170,13 @@ int main() {
                 track = pc->addTrack(media);
                 track->onOpen([&trackOpen] {trackOpen = true;});
 
-                // auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
-                // auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
-                // srReporter = make_shared<RtcpSrReporter>(rtpConfig);
-                // packetizer->addToChain(srReporter);
-                // auto nackResponder = make_shared<RtcpNackResponder>();
-                // packetizer->addToChain(nackResponder);
-
-                // track->setMediaHandler(packetizer);
+                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
+                auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
+                srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+                packetizer->addToChain(srReporter);
+                auto nackResponder = make_shared<RtcpNackResponder>();
+                packetizer->addToChain(nackResponder);
+                track->setMediaHandler(packetizer);
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
                 pc->setRemoteDescription(offer);
@@ -212,12 +195,13 @@ int main() {
         }
     });
 
-    ws.open("ws://7.tcp.eu.ngrok.io:15906");
+    ws.open("ws://0.tcp.eu.ngrok.io:10474");
 
     avformat_network_init();
 
     // const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
-    const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
+    // const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
+    const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
     if (!codec) {
         cerr << "Codec 'h264_nvenc' not found" << endl;
         return -1;
@@ -235,8 +219,18 @@ int main() {
     codecContext->time_base = (AVRational){1, 25};
     codecContext->framerate = (AVRational){25, 1};
     codecContext->gop_size = 10;
-    codecContext->max_b_frames = 1;
+    codecContext->max_b_frames = 0;
     codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+    
+    // set H264 baseline profile
+    av_opt_set(codecContext->priv_data, "profile", "baseline", 0);
+
+    // Set level to 3.1
+    av_opt_set(codecContext->priv_data, "level", "3.1", 0);
+
+    // Set packetization mode to 1 (non-interleaved mode)
+    av_opt_set(codecContext->priv_data, "packetization-mode", "1", 0);
+
 
     if (avcodec_open2(codecContext, codec, nullptr) < 0) {
         std::cerr << "Could not open codec" << std::endl;
@@ -279,22 +273,18 @@ int main() {
 
     vector<uint8_t> curr_frame(SHM_SIZE, 0);
     while (!trackOpen) {
-        this_thread::sleep_for(chrono::milliseconds(1000));
-        cout << "waiting" << endl;
+        this_thread::sleep_for(chrono::milliseconds(500));
     }
     timestamp_start = secondsSinceEpoch();
 
-    getRTPPacket(track);
+    while (true) {
+        for (int j=0; j<SHM_SIZE; j++)
+            curr_frame[j] = shm_ptr[j];
+        lol(curr_frame, frame);
 
-    // while (true) {
-    //     for (int j=0; j<SHM_SIZE; j++)
-    //         curr_frame[j] = shm_ptr[j];
-    //     lol(curr_frame, frame);
-
-    //     if (trackOpen)
-    //         encodeAndSendFrame(codecContext, frame, track, srReporter);
-    //     std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Simulate 25 FPS
-    // }
+        encodeAndSendFrame(codecContext, frame, track, srReporter);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Simulate 25 FPS
+    }
 
 
     // av_freep(&frame->data[0]);
