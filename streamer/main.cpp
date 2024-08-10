@@ -5,12 +5,28 @@
 #include <sys/fcntl.h>
 #include <sys/mman.h>
 
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <utility>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
+
+#ifdef _WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+typedef int SOCKET;
+#endif
 
 using namespace std;
 using namespace rtc;
@@ -21,6 +37,36 @@ using namespace nlohmann;
 
 static int64_t frame_number = 0;
 static uint64_t timestamp_start = 0;
+
+
+void getRTPPacket(std::shared_ptr<rtc::Track> &videoTrack){
+    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("192.168.1.252");
+    addr.sin_port = htons(6000);
+
+    if (::bind(sock, reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) < 0)
+        throw std::runtime_error("Failed to bind UDP socket on 192.168.1.252:6000");
+
+    int rcvBufSize = 212992;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char *>(&rcvBufSize),
+               sizeof(rcvBufSize));
+
+    const int BUFFER_SIZE = 2048;
+    char buffer[BUFFER_SIZE];
+    int len;
+    while ((len = recv(sock, buffer, BUFFER_SIZE, 0)) >= 0) {
+        if (len < sizeof(rtc::RtpHeader) || !videoTrack->isOpen())
+            continue;
+
+        auto rtp = reinterpret_cast<rtc::RtpHeader *>(buffer);
+        rtp->setSsrc(1);
+
+        videoTrack->send(reinterpret_cast<const std::byte *>(buffer), len);
+    }
+}
+
 
 uint64_t secondsSinceEpoch() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -138,15 +184,15 @@ int main() {
                 media.addH264Codec(102); // maybe 102 or 96
                 media.addSSRC(ssrc, cname, "stream1", cname);
                 track = pc->addTrack(media);
-                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
-                auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
-                srReporter = make_shared<RtcpSrReporter>(rtpConfig);
-                packetizer->addToChain(srReporter);
-                auto nackResponder = make_shared<RtcpNackResponder>();
-                packetizer->addToChain(nackResponder);
+                // auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
+                // auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
+                // srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+                // packetizer->addToChain(srReporter);
+                // auto nackResponder = make_shared<RtcpNackResponder>();
+                // packetizer->addToChain(nackResponder);
 
                 track->onOpen([&trackOpen] {trackOpen = true;});
-                track->setMediaHandler(packetizer);
+                // track->setMediaHandler(packetizer);
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
                 pc->setRemoteDescription(offer);
@@ -232,22 +278,25 @@ int main() {
 
     vector<uint8_t> curr_frame(SHM_SIZE, 0);
     while (!trackOpen) {
-        this_thread::sleep_for(chrono::milliseconds(100));
+        this_thread::sleep_for(chrono::milliseconds(1000));
+        cout << "waiting" << endl;
     }
     timestamp_start = secondsSinceEpoch();
 
-    while (true) {
-        for (int j=0; j<SHM_SIZE; j++)
-            curr_frame[j] = shm_ptr[j];
-        lol(curr_frame, frame);
+    getRTPPacket(track);
 
-        if (trackOpen)
-            encodeAndSendFrame(codecContext, frame, track, srReporter);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Simulate 25 FPS
-    }
+    // while (true) {
+    //     for (int j=0; j<SHM_SIZE; j++)
+    //         curr_frame[j] = shm_ptr[j];
+    //     lol(curr_frame, frame);
+
+    //     if (trackOpen)
+    //         encodeAndSendFrame(codecContext, frame, track, srReporter);
+    //     std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Simulate 25 FPS
+    // }
 
 
-    av_freep(&frame->data[0]);
-    av_frame_free(&frame); // dont forget to free memory
-    avcodec_free_context(&codecContext);
+    // av_freep(&frame->data[0]);
+    // av_frame_free(&frame); // dont forget to free memory
+    // avcodec_free_context(&codecContext);
 }
