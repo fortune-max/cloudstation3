@@ -184,6 +184,8 @@ int main() {
                 media.addH264Codec(102); // maybe 102 or 96
                 media.addSSRC(ssrc, cname, "stream1", cname);
                 track = pc->addTrack(media);
+                track->onOpen([&trackOpen] {trackOpen = true;});
+
                 // auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
                 // auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
                 // srReporter = make_shared<RtcpSrReporter>(rtpConfig);
@@ -191,7 +193,6 @@ int main() {
                 // auto nackResponder = make_shared<RtcpNackResponder>();
                 // packetizer->addToChain(nackResponder);
 
-                track->onOpen([&trackOpen] {trackOpen = true;});
                 // track->setMediaHandler(packetizer);
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
