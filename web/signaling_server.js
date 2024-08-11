@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 
 const port = process.env.SIGNAL_SERVER_PORT || 8088;
 
-const wss = new WebSocket.Server({ port: port });
+const wss = new WebSocket.Server({ port: port, host: '0.0.0.0' });
 
 wss.on('connection', (ws) => {
   console.log('Client connected', wss.clients.size);
@@ -17,4 +17,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log(`Signal server started on ws://localhost:${port}`);
+console.log(`Signal server started on ws://0.0.0.0:${port}`);
