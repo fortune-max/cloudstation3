@@ -108,6 +108,16 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::share
         for (int i = 0; i < packet->size; i++)
             pkt_data[i] = byte(packet->data[i]);
 
+        // FILE *file = fopen("/tmp/fme/pkt_baseline_nvd.h264", "rb");
+        // fseek(file, 0, SEEK_END);
+        // int file_size = ftell(file);
+        // fseek(file, 0, SEEK_SET);
+        // vector<byte> new_sample(file_size, byte(0));
+        // fread(new_sample.data(), sizeof(byte), file_size, file);
+        // fclose(file);
+        // videoTrack->send(new_sample);
+        // exit(0);
+
         // videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
         videoTrack->send(pkt_data);
 
@@ -131,19 +141,7 @@ int main() {
     shared_ptr<Track> track;
     shared_ptr<RtcpSrReporter> srReporter;
     bool trackOpen = false;
-    auto pc = std::make_shared<rtc::PeerConnection>(config);
-
-    pc->onLocalCandidate([&ws](const Candidate& candidate) {
-        json message = {
-            {"type", "candidate"},
-            {"candidate", string(candidate)},
-            {"mid", candidate.mid()}
-        };
-        ws.send(message.dump());
-    });
-    pc->onStateChange([](PeerConnection::State state) {
-        cout << "State: " << state << endl;
-    });
+    shared_ptr<PeerConnection> pc;
 
     ws.onOpen([]() { cout << "WebSocket open" << endl; });
 
@@ -154,23 +152,30 @@ int main() {
             cout << "type: " << type << endl;
 
             if (type == "offer") {
-                pc->onLocalDescription([&ws](const Description& description) {
-                    json message = {
-                        {"type", "answer"},
-                        {"sdp", string(description)}
-                    };
-                    ws.send(message.dump());
-                });
+                pc = make_shared<PeerConnection>(config);
+                pc->onGatheringStateChange(
+                    [&ws, &pc](PeerConnection::GatheringState state) {
+                        cout << "Gathering State: " << state << endl;
+                        if (state == PeerConnection::GatheringState::Complete) {
+                            auto description = pc->localDescription();
+                            json message = {
+                                {"type", description->typeString()},
+                                {"sdp", string(description.value())}
+                            };
+                            ws.send(message.dump());
+                        }
+                    }
+                );
 
                 const SSRC ssrc = 1;
                 const string cname = "0";
                 auto media = Description::Video(cname, Description::Direction::SendOnly);
-                media.addH264Codec(102); // maybe 102 or 96
+                media.addH264Codec(106); // maybe 102 or 96
                 media.addSSRC(ssrc, cname, "stream1", cname);
                 track = pc->addTrack(media);
                 track->onOpen([&trackOpen] {trackOpen = true;});
 
-                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 102, H264RtpPacketizer::defaultClockRate);
+                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 106, H264RtpPacketizer::defaultClockRate);
                 auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
                 srReporter = make_shared<RtcpSrReporter>(rtpConfig);
                 packetizer->addToChain(srReporter);
@@ -180,13 +185,6 @@ int main() {
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
                 pc->setRemoteDescription(offer);
-            } else if (type == "candidate") {
-                json candidate_json = msg_json["candidate"];
-                Candidate candidate(candidate_json["candidate"].get<string>(), candidate_json["sdpMid"].get<string>());
-                if (candidate.family() != Candidate::Family::Unresolved) {
-                    cout << "Remote Candidate: " << candidate.candidate() << endl;
-                    pc->addRemoteCandidate(candidate);
-                }
             } else {
                 cerr << "[Type not handled]: " << type << endl;
             }
