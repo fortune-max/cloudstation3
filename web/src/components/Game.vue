@@ -67,11 +67,11 @@
       </div>
       <div class="gamepad">
         <h2>Gamepad</h2>
-        <p>Connected: 🎮 {{ gamepadConnected ? '✅' : '❌' }}</p>
+        <p>Connected: 🎮 {{ gamepadIdx !== -1 ? '✅' : '❌' }}</p>
         <p>Input Events:</p>
         <ul class="ml-10">
-          <li v-for="button in buttons" :key="button">
-            {{ button }}
+          <li v-for="event in recentEvents" :key="event">
+            {{ event }}
           </li>
         </ul>
       </div>
@@ -80,11 +80,13 @@
 </template>
   
 <script setup lang="js">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
+import gamepadCfgRaw from './ps5_gamepad.cfg.json';
+import { gamepadDiff, transformBtn, transformAxis } from '../utils.ts';
 
 const signalServerAddress = ref('ws://0.tcp.eu.ngrok.io:15844');
 const gamepadConnected = ref(true);
-const buttons = ref(["lol", "lol2"]);
+const events = ref({});
 const fps = ref(30);
 const signalingServerConnected = ref(false);
 
@@ -176,7 +178,56 @@ function sendData(data) {
     setTimeout(() => sendData(data), 1000);
 }
 
+let oldState = null;
+const gamepadIdx = ref(-1);
+const configName = "defaultCfg";
+const gamepadMap = gamepadCfgRaw[configName];
+const btnMap = gamepadMap.button;
+const axesMap = gamepadMap.axis;
+
+const recentEvents = computed(() => {
+  return Object.keys(events.value).filter((key) => {
+    return new Date().getTime() - events.value[key] < 1000;
+  });
+});
+
+window.addEventListener("gamepadconnected", (e) => {
+  gamepadIdx.value = e.gamepad.index;
+});
+
+window.addEventListener("gamepaddisconnected", () => {
+  gamepadIdx.value = -1;
+});
+
+function currentGamepad() {
+  if (gamepadIdx.value === -1) return null;
+  return navigator.getGamepads()[gamepadIdx.value];
+}
+
+function animate() {
+  const newState = currentGamepad();
+  const diff = gamepadDiff(oldState, newState);
+  if (diff && newState && diff.axes.length + diff.buttons.length){
+    const chunk = [];
+    diff.buttons.forEach((buttonIdx) => {
+      events.value[btnMap[buttonIdx].name] = new Date().getTime();
+      chunk.push(transformBtn(newState.buttons[buttonIdx].value, btnMap[buttonIdx].in, btnMap[buttonIdx].out));
+    });
+    diff.axes.forEach((axisIdx) => {
+      events.value[axesMap[axisIdx].name] = new Date().getTime();
+      chunk.push(transformAxis(newState.axes[axisIdx], axesMap[axisIdx].in, axesMap[axisIdx].out));
+    });
+    if (chunk.length){
+      console.log('Sent', chunk.length, 'events')
+      // socket.send(JSON.stringify(chunk));
+    };
+  }
+  oldState = newState;
+  requestAnimationFrame(animate);
+}
+
 onMounted(async () => {
+  requestAnimationFrame(animate);
   connectToSignalingServer(signalServerAddress.value);
 });
 </script>
