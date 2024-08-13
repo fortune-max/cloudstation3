@@ -6,7 +6,7 @@
   justify-content: center;
   align-items: center;
   flex-direction: column;
-  margin-top: 50px;
+  margin-top: 20px;
 }
 .video-section {
   display: flex;
@@ -28,7 +28,11 @@
 }
 #remoteVideo {
   width: 100%;
-  height: 400px;
+  height: 350px;
+}
+.form {
+  display: flex;
+  gap: 15px;
 }
 </style>
 <template>
@@ -37,24 +41,22 @@
       <h2>FPS: {{ fps }}</h2>
       <video id="remoteVideo" autoplay controls></video>
     </div>
-    <div>
-      <v-form>
-        <v-text-field
-          v-model="signalServerAddress"
-          label="Signaling Server"
-          variant="outlined"
-          width="300"
-        />
-        <v-btn
-          color="light-blue"
-          width="300"
-          height="50"
-          @click="makeOffer"
-          :disabled="!signalServerAddress || !signalingServerConnected"
-        >
-          Start!
-        </v-btn>
-      </v-form>
+    <div class="form">
+      <v-text-field
+        v-model="signalServerAddress"
+        label="Signaling Server"
+        variant="outlined"
+        width="300"
+      />
+      <v-btn
+        color="light-blue"
+        width="100"
+        height="55"
+        @click="makeOffer"
+        :disabled="!signalServerAddress || !signalingServerConnected"
+      >
+        Start!
+      </v-btn>
     </div>
     <div class="state-gamepad">
       <div class="state">
