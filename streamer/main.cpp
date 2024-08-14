@@ -9,9 +9,8 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
-#include "joystick.hpp"
-#include <cstdint>
 #include <csignal>
+#include "joystick.hpp"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -20,16 +19,6 @@ extern "C" {
 #include <libavutil/opt.h>
 #include <libswscale/swscale.h>
 }
-
-#ifdef _WIN32
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#include <winsock2.h>
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-typedef int SOCKET;
-#endif
 
 using namespace std;
 using namespace rtc;
@@ -100,16 +89,16 @@ shared_ptr<DataChannel> dc = nullptr;
 shared_ptr<PeerConnection> pc = nullptr;
 shared_ptr<RtcpSrReporter> srReporter = nullptr;
 
-void handle_offer(string offer_str) {
+void handle_offer(const string &offer_str) {
     json offer_json = json::parse(offer_str);
     Configuration config;
     config.iceServers.emplace_back("stun.l.google.com:19302");
     pc = make_shared<PeerConnection>(config);
     pc->onGatheringStateChange(
-        [](PeerConnection::GatheringState state) {
+        [](const PeerConnection::GatheringState state) {
             if (state == PeerConnection::GatheringState::Complete) {
-                auto description = pc->localDescription();
-                json message = {{"type", "answer"}, {"sdp", string(description.value())}};
+                const auto description = pc->localDescription();
+                const json message = {{"type", "answer"}, {"sdp", string(description.value())}};
                 string answer = message.dump();
                 cout << answer << endl;
                 webSocket.send(answer);
@@ -117,7 +106,7 @@ void handle_offer(string offer_str) {
         }
     );
 
-    const SSRC ssrc = 1;
+    constexpr SSRC ssrc = 1;
     const string cname = "0";
     auto videoDesc = Description::Video(cname, Description::Direction::SendOnly);
     videoDesc.addH264Codec(106);
@@ -149,24 +138,24 @@ void handle_offer(string offer_str) {
     pc->setRemoteDescription(offer);
 }
 
-// void signalHandler(int signum) {
-//     std::cout << "Interrupt signal (" << signum << ") received.\n";
-//     freeResources();
-//     exit(signum);
-// }
-//
-// void freeResources(){
-//     // av_freep(&frame->data[0]);
-//     // av_frame_free(&frame); // dont forget to free memory
-//     // avcodec_free_context(&codecContext);
-//     // sws_freeContext(sws_ctx);
-//     libevdev_uinput_destroy(uidev);
-//     libevdev_free(dev);
-// }
+void freeResources(){
+    // av_freep(&frame->data[0]);
+    // av_frame_free(&frame); // dont forget to free memory
+    // avcodec_free_context(&codecContext);
+    // sws_freeContext(sws_ctx);
+    libevdev_uinput_destroy(uidev);
+    libevdev_free(dev);
+}
+
+void signalHandler(int signum) {
+    std::cout << "Interrupt signal (" << signum << ") received.\n";
+    freeResources();
+    exit(signum);
+}
 
 int main() {
-    // signal(SIGINT, signalHandler);
-    // signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
 
     InitLogger(LogLevel::Info);
 

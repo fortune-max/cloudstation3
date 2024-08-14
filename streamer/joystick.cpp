@@ -37,7 +37,7 @@ void create_joystick() {
     libevdev_uinput_create_from_device(dev, LIBEVDEV_UINPUT_OPEN_MANAGED, &uidev);
 }
 
-void write_event(uint16_t type, uint16_t code, int32_t value) {
+void write_event(const uint16_t type, const uint16_t code, const int32_t value) {
     libevdev_uinput_write_event(uidev, type, code, value);
     libevdev_uinput_write_event(uidev, EV_SYN, SYN_REPORT, 0);
 }
