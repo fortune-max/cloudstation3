@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
+#include "joystick.hpp"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -131,6 +132,8 @@ void handle_offer(string offer_str) {
 
     pc->onDataChannel([](const shared_ptr<DataChannel> &channel) {
         dc = channel;
+        create_joystick();
+
         dc->onMessage([](variant<binary, string> message) {
             if (holds_alternative<string>(message)) {
                 cout << "DataChannel message: " << get<string>(message) << endl;
@@ -148,8 +151,25 @@ void handle_offer(string offer_str) {
     pc->setRemoteDescription(offer);
 }
 
+void signalHandler(int signum) {
+    std::cout << "Interrupt signal (" << signum << ") received.\n";
+    freeResources();
+    exit(signum);
+}
+
+void freeResources(){
+    // av_freep(&frame->data[0]);
+    // av_frame_free(&frame); // dont forget to free memory
+    // avcodec_free_context(&codecContext);
+    // sws_freeContext(sws_ctx);
+    libevdev_uinput_destroy(uidev);
+    libevdev_free(dev);
+}
 
 int main() {
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
+
     InitLogger(LogLevel::Info);
 
     webSocket.onOpen([]() { cout << "WebSocket open" << endl; });
@@ -219,9 +239,4 @@ int main() {
         encodeAndSendFrame(codecContext, frame, videoTrack, srReporter);
         this_thread::sleep_for(chrono::milliseconds(10)); // At most 100 FPS
     }
-
-    // av_freep(&frame->data[0]);
-    // av_frame_free(&frame); // dont forget to free memory
-    // avcodec_free_context(&codecContext);
-    // sws_freeContext(sws_ctx);
 }
