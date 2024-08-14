@@ -104,7 +104,7 @@ import { ref, onMounted, watch, computed } from 'vue';
 import gamepadCfgRaw from './ps5_gamepad.cfg.json';
 import { gamepadDiff, transformBtn, transformAxis } from '../utils.ts';
 
-const wsAddr = 'ws://0.tcp.eu.ngrok.io:15844';
+const wsAddr = 'ws://2.tcp.eu.ngrok.io:10244';
 const textBoxValue = ref(wsAddr);
 const gamepadConnected = ref(true);
 const events = ref({});
