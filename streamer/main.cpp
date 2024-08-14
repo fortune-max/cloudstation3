@@ -35,62 +35,42 @@ using namespace nlohmann;
 #undef av_err2str
 #define av_err2str(errnum) av_make_error_string((char*)__builtin_alloca(AV_ERROR_MAX_STRING_SIZE), AV_ERROR_MAX_STRING_SIZE, errnum)
 
+static int in_line[4]{};
 static int64_t frame_number = 0;
 static uint64_t timestamp_start = 0;
+static SwsContext* sws_ctx = nullptr;
 
 
 uint64_t microsecondsSinceEpoch() {
-    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return chrono::duration_cast<chrono::microseconds>(chrono::system_clock::now().time_since_epoch()).count();
 }
 
+void convert_to_yuvframe(vector<uint8_t> &frame_data, AVFrame *out_frame) {
+    if (!sws_ctx) {
+        av_image_fill_linesizes(in_line, AV_PIX_FMT_BGRA, 1280);
+        sws_ctx = sws_getContext(
+            1280, 720, AV_PIX_FMT_BGRA,  // Source format
+            1280, 720, AV_PIX_FMT_YUV420P,  // Destination format
+            SWS_BILINEAR, nullptr, nullptr, nullptr
+        );
+    }
 
-void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     uint8_t* in_data[4]{};
-    int in_line[4]{};
-
-    av_image_fill_linesizes(in_line, AV_PIX_FMT_BGRA, 1280);
     av_image_fill_pointers(in_data, AV_PIX_FMT_BGRA, 720, frame_data.data(), in_line);
-
-    // Initialize the SwsContext for conversion
-    SwsContext* sws_ctx = sws_getContext(
-        1280, 720, AV_PIX_FMT_BGRA,  // Source format
-        1280, 720, AV_PIX_FMT_YUV420P,  // Destination format
-        SWS_BILINEAR, nullptr, nullptr, nullptr
-    );
-
-    int res = sws_scale(
-        sws_ctx, in_data, in_line,
-        0, 720,
-        out_frame->data, out_frame->linesize
-    );
-
-    int64_t frame_duration = AV_TIME_BASE;
-    out_frame->pts = frame_number++ * frame_duration;
-
-    if (res < 0) {
-        cerr << "Error scaling-converting: " << av_err2str(res) << endl;
-    }
+    sws_scale(sws_ctx, in_data, in_line, 0, 720, out_frame->data, out_frame->linesize);
+    out_frame->pts = frame_number++ * AV_TIME_BASE;
 }
 
-void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const std::shared_ptr<rtc::Track> &videoTrack, const std::shared_ptr<RtcpSrReporter> &srReporter) {
+void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shared_ptr<Track> &videoTrack, const shared_ptr<RtcpSrReporter> &srReporter) {
     AVPacket* packet = av_packet_alloc();
-    if (!packet) {
-        std::cerr << "Could not allocate AVPacket" << std::endl;
-        return;
-    }
-
     int ret = avcodec_send_frame(codecContext, frame);
-    if (ret < 0) {
-        std::cerr << "Error sending frame to encoder: " << av_err2str(ret) << std::endl;
-        return;
-    }
 
     while (ret >= 0) {
         ret = avcodec_receive_packet(codecContext, packet);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
             break;
         } else if (ret < 0) {
-            std::cerr << "Error encoding frame: " << av_err2str(ret) << std::endl;
+            cerr << "Error encoding frame: " << av_err2str(ret) << endl;
             break;
         }
         cout << "Sending frames: " << packet->size << endl;
@@ -101,13 +81,14 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const std:
 
         auto reportElapsedTimestamp = srReporter->rtpConfig->timestamp - srReporter->lastReportedTimestamp();
 
-        if (srReporter->rtpConfig->timestampToSeconds(reportElapsedTimestamp) >= 1) {
+        if (srReporter->rtpConfig->timestampToSeconds(reportElapsedTimestamp) >= 1)
             srReporter->setNeedsToReport();
-        }
 
-        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
+        videoTrack->send(reinterpret_cast<byte*>(packet->data), packet->size * sizeof(byte));
         av_packet_unref(packet);
     }
+
+    av_packet_free(&packet);
 }
 
 int main() {
@@ -163,21 +144,15 @@ int main() {
 
                 Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
                 pc->setRemoteDescription(offer);
-            } else {
-                cerr << "[Type not handled]: " << type << endl;
             }
-        } else {
-            cerr << "[WS message not handled]: " << get<binary>(message).size() << endl;
         }
     });
 
-    ws.open("wss://7.tcp.eu.ngrok.io:17135");
+    ws.open("ws://7.tcp.eu.ngrok.io:17135");
 
     avformat_network_init();
 
     const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
-    // const AVCodec* codec = avcodec_find_encoder_by_name("libx264");
-    // const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_H264);
 
     if (!codec) {
         cerr << "Codec 'h264_nvenc' not found" << endl;
@@ -223,7 +198,6 @@ int main() {
         codecContext->height, codecContext->pix_fmt, 32
     );
 
-
     const auto *shmName = "/vectframe_shm";
     const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
 
@@ -251,13 +225,13 @@ int main() {
 
     while (true) {
         copy_n(shm_ptr, SHM_SIZE, curr_frame.begin());
-        lol(curr_frame, frame);
+        convert_to_yuvframe(curr_frame, frame);
         encodeAndSendFrame(codecContext, frame, track, srReporter);
-        std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Simulate 33 FPS
+        this_thread::sleep_for(chrono::milliseconds(16)); // Simulate 50 FPS
     }
-
 
     // av_freep(&frame->data[0]);
     // av_frame_free(&frame); // dont forget to free memory
     // avcodec_free_context(&codecContext);
+    // sws_freeContext(sws_ctx);
 }
