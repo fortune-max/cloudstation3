@@ -262,7 +262,7 @@ const axesMap = gamepadMap.axis;
 
 const recentEvents = computed(() => {
   return Object.keys(events.value).filter((key) => {
-    return new Date().getTime() - events.value[key] < 1000;
+    return new Date().getTime() - events.value[key] < 500;
   });
 });
 

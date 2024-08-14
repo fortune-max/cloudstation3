@@ -188,10 +188,20 @@
                     "min": 0,
                     "max": 1023
                 }
+            },
+            "17": {
+                "name": "Touchpad",
+                "in": {
+                    "type": "button"
+                },
+                "out": {
+                    "type": 1,
+                    "code": 304
+                }
             }
         },
         "axis": {
-            "1": {
+            "0": {
                 "name": "Left Analog Up,Down",
                 "in": {
                     "type": "axis",
@@ -207,7 +217,7 @@
                     "max": 32767
                 }
             },
-            "0": {
+            "1": {
                 "name": "Left Analog Left,Right",
                 "in": {
                     "type": "axis",
@@ -223,7 +233,7 @@
                     "max": 32767
                 }
             },
-            "3": {
+            "2": {
                 "name": "Right Analog Up,Down",
                 "in": {
                     "type": "axis",
@@ -239,7 +249,7 @@
                     "max": 32767
                 }
             },
-            "2": {
+            "3": {
                 "name": "Right Analog Left,Right",
                 "in": {
                     "type": "axis",
