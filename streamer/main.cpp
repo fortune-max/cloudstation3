@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
+#include <cstdint>
 #include <csignal>
 #include "joystick.hpp"
 
