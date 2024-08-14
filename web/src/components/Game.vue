@@ -1,4 +1,4 @@
-<style>
+<style lang="scss">
 #wrapper {
   width: 100%;
   display: flex;
@@ -13,6 +13,16 @@
   flex-direction: column;
   gap: 20px;
 }
+.signal {
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
+  align-items: center;
+
+  .v-input__details {
+    display: none !important;
+  }
+}
 .state-gamepad {
   display: flex;
   gap: 30px;
@@ -24,7 +34,6 @@
   width: 400px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
 }
 #remoteVideo {
   width: 100%;
@@ -41,22 +50,33 @@
       <h2>FPS: {{ fps }}</h2>
       <video id="remoteVideo" autoplay controls></video>
     </div>
-    <div class="form">
-      <v-text-field
-        v-model="signalServerAddress"
-        label="Signaling Server"
-        variant="outlined"
-        width="300"
+    <div class="signal">
+      <div class="form">
+        <v-text-field
+          v-model="textBoxValue"
+          :label="textboxLabel"
+          variant="outlined"
+          width="300"
+          :disabled="!textboxEnabled"
+        />
+        <v-btn
+          color="light-blue"
+          width="160"
+          height="55"
+          @click="makeOffer"
+          :disabled="btnDisabled"
+        >
+          {{ btnText }}
+        </v-btn>
+        <v-snackbar v-model="showToast" :timeout="3000">
+          {{ toastText }}
+        </v-snackbar>
+      </div>
+      <v-switch
+        v-model="useWebSockets"
+        color="primary"
+        label="Use Signaling Server"
       />
-      <v-btn
-        color="light-blue"
-        width="100"
-        height="55"
-        @click="makeOffer"
-        :disabled="!signalServerAddress || !signalingServerConnected"
-      >
-        Start!
-      </v-btn>
     </div>
     <div class="state-gamepad">
       <div class="state">
@@ -84,10 +104,14 @@ import { ref, onMounted, watch, computed } from 'vue';
 import gamepadCfgRaw from './ps5_gamepad.cfg.json';
 import { gamepadDiff, transformBtn, transformAxis } from '../utils.ts';
 
-const signalServerAddress = ref('ws://0.tcp.eu.ngrok.io:15844');
+const wsAddr = 'ws://0.tcp.eu.ngrok.io:15844';
+const textBoxValue = ref(wsAddr);
 const gamepadConnected = ref(true);
 const events = ref({});
 const fps = ref(30);
+const useWebSockets = ref(true);
+const showToast = ref(false);
+const toastText = ref('');
 const signalingServerConnected = ref(false);
 
 const iceConnectionState = ref('');
@@ -97,12 +121,35 @@ const signalingState = ref('');
 let peerConnection;
 let signalingServer;
 
+const btnText = computed(() => {
+  if (useWebSockets.value) return 'Start!';
+  if (signalingState.value.endsWith('have-local-offer')) return 'Submit Answer!';
+  return 'Copy Offer!';
+});
+
+const btnDisabled = computed(() => {
+  if (iceConnectionState.value.endsWith('connected')) return true;
+  return useWebSockets && (!textBoxValue || !signalingServerConnected);
+});
+
+const textboxEnabled = computed(() => {
+  if (useWebSockets.value) return true;
+  if (signalingState.value.endsWith('have-local-offer')) return true;
+  return false;
+});
+
+const textboxLabel = computed(() => {
+  if (useWebSockets.value) return 'Signaling Server';
+  if (signalingState.value.endsWith('have-local-offer')) return 'Answer';
+  return '';
+});
+
 const connectToSignalingServer = async (address) => {
-  if (signalingServer) signalingServer.close();
+  if (signalingServer && signalingServer.readyState === 1)
+    signalingServer.close();
   signalingServerConnected.value = false;
   signalingServer = new WebSocket(address);
   signalingServer.onopen = () => { signalingServerConnected.value = true; };
-  signalingServer.onclose = () => { signalingServerConnected.value = false; };
   signalingServer.onmessage = async (evt) => {
     if (typeof evt.data !== 'string') return;
     const message = JSON.parse(evt.data);
@@ -137,6 +184,12 @@ const startFPSCounter = () => {
 };
 
 async function makeOffer() {
+  if (!useWebSockets.value && signalingState.value.endsWith('have-local-offer')) {
+    peerConnection.setRemoteDescription(JSON.parse(textBoxValue.value));
+    toastText.value = 'Answer Submitted!';
+    showToast.value = true;
+    return;
+  }
   const configuration = {iceServers: [{urls: 'stun:stun.l.google.com:19302'}]};
   peerConnection = new RTCPeerConnection(configuration);
 
@@ -165,11 +218,29 @@ async function makeOffer() {
   });
   await peerConnection.setLocalDescription(offer);
   await waitGatheringComplete();
-  sendData(peerConnection.localDescription);
+  if (useWebSockets.value)
+    sendData(peerConnection.localDescription);
+  else {
+    navigator.clipboard.writeText(JSON.stringify(peerConnection.localDescription));
+    toastText.value = 'Offer copied to clipboard!';
+    showToast.value = true;
+    globalThis.peerConnection = peerConnection;
+  }
   startFPSCounter();
 }
 
-watch(() => signalServerAddress.value, connectToSignalingServer);
+watch(() => textBoxValue.value, (newVal) => {
+  if (useWebSockets.value) connectToSignalingServer(newVal);
+});
+
+watch(() => useWebSockets.value, (newVal) => {
+  if (newVal) {
+    textBoxValue.value = wsAddr;
+    connectToSignalingServer(wsAddr);
+  } else {
+    textBoxValue.value = '';
+  }
+});
 
 function sendData(data) {
   if(signalingServer.readyState)
@@ -228,6 +299,6 @@ function animate() {
 
 onMounted(async () => {
   requestAnimationFrame(animate);
-  connectToSignalingServer(signalServerAddress.value);
+  connectToSignalingServer(textBoxValue.value);
 });
 </script>
