@@ -9,10 +9,7 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
-#ifdef JOYSTICK_HPP
-#else
 #include "joystick.hpp"
-#endif
 #include <cstdint>
 #include <csignal>
 

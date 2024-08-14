@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <libevdev/libevdev.h>
 #include <libevdev/libevdev-uinput.h>
-#define JOYSTICK_HPP
 
 inline struct libevdev *dev;
 inline struct libevdev_uinput *uidev;

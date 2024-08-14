@@ -1,10 +1,4 @@
-#include <libevdev/libevdev.h>
-#include <libevdev/libevdev-uinput.h>
-#ifdef JOYSTICK_HPP
-#else
 #include "joystick.hpp"
-#endif
-
 
 void create_joystick() {
     dev = libevdev_new();
@@ -26,23 +20,19 @@ void create_joystick() {
     libevdev_enable_event_type(dev, EV_ABS);
     struct input_absinfo absinfo = {0, -32768, 32767, 16, 128, 0};
     libevdev_enable_event_code(dev, EV_ABS, ABS_X, &absinfo);
-    libevdev_enable_event_code(dev, EV_ABS, ABS_Y, &absinfo);
-    struct input_absinfo absinfo2 = {-1, -32768, 32767, 16, 128, 0};
-    libevdev_enable_event_code(dev, EV_ABS, ABS_Z, &absinfo2);
     libevdev_enable_event_code(dev, EV_ABS, ABS_RX, &absinfo);
+
+    struct input_absinfo absinfo2 = {-1, -32768, 32767, 16, 128, 0};
+    libevdev_enable_event_code(dev, EV_ABS, ABS_Y, &absinfo);
     libevdev_enable_event_code(dev, EV_ABS, ABS_RY, &absinfo);
+
+    struct input_absinfo absinfo4 = {0, 0, 1023, 0, 15, 0};
+    libevdev_enable_event_code(dev, EV_ABS, ABS_Z, &absinfo2);
     libevdev_enable_event_code(dev, EV_ABS, ABS_RZ, &absinfo2);
+
     struct input_absinfo absinfo3 = {0, -1, 1, 0, 0, 0};
     libevdev_enable_event_code(dev, EV_ABS, ABS_HAT0X, &absinfo3);
     libevdev_enable_event_code(dev, EV_ABS, ABS_HAT0Y, &absinfo3);
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_X, &(struct input_absinfo){0, -32768, 32767, 16, 128, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_Y, &(struct input_absinfo){-1, -32768, 32767, 16, 128, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_Z, &(struct input_absinfo){0, 0, 1023, 0, 15, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_RX, &(struct input_absinfo){0, -32768, 32767, 16, 128, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_RY, &(struct input_absinfo){-1, -32768, 32767, 16, 128, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_RZ, &(struct input_absinfo){0, 0, 1023, 0, 15, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_HAT0X, &(struct input_absinfo){0, -1, 1, 0, 0, 0});
-    // libevdev_enable_event_code(dev, EV_ABS, ABS_HAT0Y, &(struct input_absinfo){0, -1, 1, 0, 0, 0});
 
     libevdev_uinput_create_from_device(dev, LIBEVDEV_UINPUT_OPEN_MANAGED, &uidev);
 }
