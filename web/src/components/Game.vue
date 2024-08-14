@@ -129,6 +129,7 @@ const btnText = computed(() => {
 
 const btnDisabled = computed(() => {
   if (iceConnectionState.value.endsWith('connected')) return true;
+  if (btnText.value === 'Submit Answer!' && !textBoxValue.value) return true;
   return useWebSockets && (!textBoxValue || !signalingServerConnected);
 });
 
