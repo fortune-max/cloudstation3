@@ -96,8 +96,8 @@ shared_ptr<Track> videoTrack = nullptr;
 shared_ptr<PeerConnection> pc = nullptr;
 shared_ptr<RtcpSrReporter> srReporter = nullptr;
 
-void handle_offer(string offer) {
-    json offer_json = json::parse(offer);
+void handle_offer(string offer_str) {
+    json offer_json = json::parse(offer_str);
     Configuration config;
     config.iceServers.emplace_back("stun.l.google.com:19302");
     pc = make_shared<PeerConnection>(config);
