@@ -73,7 +73,6 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
             cerr << "Error encoding frame: " << av_err2str(ret) << endl;
             break;
         }
-        cout << "Sending frames: " << packet->size << endl;
 
         const double elapsedSeconds = static_cast<double>(microsecondsSinceEpoch() - timestamp_start) / 1000000;
         uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
@@ -88,83 +87,74 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
         av_packet_unref(packet);
     }
 
+    cout << "Frame encoded and sent" << endl;
     av_packet_free(&packet);
 }
+
+WebSocket webSocket;
+shared_ptr<Track> videoTrack = nullptr;
+shared_ptr<PeerConnection> pc = nullptr;
+shared_ptr<RtcpSrReporter> srReporter = nullptr;
+
+void handle_offer(string offer) {
+    json offer_json = json::parse(offer);
+    Configuration config;
+    config.iceServers.emplace_back("stun.l.google.com:19302");
+    pc = make_shared<PeerConnection>(config);
+    pc->onGatheringStateChange(
+        [](PeerConnection::GatheringState state) {
+            if (state == PeerConnection::GatheringState::Complete) {
+                auto description = pc->localDescription();
+                json message = {{"type", "answer"}, {"sdp", string(description.value())}};
+                string answer = message.dump();
+                cout << answer << endl;
+                webSocket.send(answer);
+            }
+        }
+    );
+
+    const SSRC ssrc = 1;
+    const string cname = "0";
+    auto videoDesc = Description::Video(cname, Description::Direction::SendOnly);
+    videoDesc.addH264Codec(106);
+    videoDesc.addSSRC(ssrc, cname);
+    videoTrack = pc->addTrack(videoDesc);
+
+    auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 106, H264RtpPacketizer::defaultClockRate);
+    auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
+    srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+    packetizer->addToChain(srReporter);
+    auto nackResponder = make_shared<RtcpNackResponder>();
+    packetizer->addToChain(nackResponder);
+    videoTrack->setMediaHandler(packetizer);
+
+    Description offer(offer_json["sdp"].get<string>(), Description::Type::Offer);
+    pc->setRemoteDescription(offer);
+}
+
 
 int main() {
     InitLogger(LogLevel::Info);
 
-    WebSocket ws;
-    Configuration config;
-    config.iceServers.emplace_back("stun.l.google.com:19302");
-    shared_ptr<Track> track;
-    shared_ptr<RtcpSrReporter> srReporter;
-    bool trackOpen = false;
-    shared_ptr<PeerConnection> pc;
-
-    ws.onOpen([]() { cout << "WebSocket open" << endl; });
-
-    ws.onMessage([&config, &pc, &ws, &track, &trackOpen, &srReporter](variant<binary, string> message) {
+    webSocket.onOpen([]() { cout << "WebSocket open" << endl; });
+    webSocket.onMessage([](variant<binary, string> message) {
         if (holds_alternative<string>(message)) {
             auto msg_json = json::parse(get<string>(message));
             auto type = msg_json["type"].get<string>();
-            cout << "type: " << type << endl;
-
-            if (type == "offer") {
-                pc = make_shared<PeerConnection>(config);
-                pc->onGatheringStateChange(
-                    [&ws, &pc](PeerConnection::GatheringState state) {
-                        cout << "Gathering State: " << state << endl;
-                        if (state == PeerConnection::GatheringState::Complete) {
-                            auto description = pc->localDescription();
-                            json message = {
-                                {"type", description->typeString()},
-                                {"sdp", string(description.value())}
-                            };
-                            ws.send(message.dump());
-                        }
-                    }
-                );
-
-                const SSRC ssrc = 1;
-                const string cname = "0";
-                auto media = Description::Video(cname, Description::Direction::SendOnly);
-                media.addH264Codec(106); // maybe 102 or 96
-                media.addSSRC(ssrc, cname, "stream1", cname);
-                track = pc->addTrack(media);
-                track->onOpen([&trackOpen] {trackOpen = true;});
-
-                auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 106, H264RtpPacketizer::defaultClockRate);
-                auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
-                srReporter = make_shared<RtcpSrReporter>(rtpConfig);
-                packetizer->addToChain(srReporter);
-                auto nackResponder = make_shared<RtcpNackResponder>();
-                packetizer->addToChain(nackResponder);
-                track->setMediaHandler(packetizer);
-
-                Description offer(msg_json["sdp"].get<string>(), Description::Type::Offer);
-                pc->setRemoteDescription(offer);
-            }
+            if (type == "offer") handle_offer(get<string>(message));
         }
     });
-
-    ws.open("ws://7.tcp.eu.ngrok.io:17135");
+    webSocket.open("ws://7.tcp.eu.ngrok.io:17135");
 
     avformat_network_init();
 
     const AVCodec* codec = avcodec_find_encoder_by_name("h264_nvenc");
-
     if (!codec) {
         cerr << "Codec 'h264_nvenc' not found" << endl;
         return -1;
     }
 
     AVCodecContext* codecContext = avcodec_alloc_context3(codec);
-    if (!codecContext) {
-        cerr << "Could not allocate video codec context" << endl;
-        return -1;
-    }
-
     codecContext->bit_rate = 1024000;
     codecContext->width = 1280;
     codecContext->height = 720;
@@ -173,37 +163,21 @@ int main() {
     codecContext->gop_size = 10;
     codecContext->max_b_frames = 0;
     codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
-
     // av_opt_set(codecContext->priv_data, "profile", "baseline", 0);
     // av_opt_set(codecContext->priv_data, "level", "3.1", 0);
     // av_opt_set(codecContext->priv_data, "packetization-mode", "1", 0);
 
-
-    if (avcodec_open2(codecContext, codec, nullptr) < 0) {
-        std::cerr << "Could not open codec" << std::endl;
-        return -1;
-    }
-
+    avcodec_open2(codecContext, codec, nullptr);
     AVFrame* frame = av_frame_alloc();
-    if (!frame) {
-        cerr << "Could not allocate video frame" << endl;
-        return -1;
-    }
     frame->format = codecContext->pix_fmt;
     frame->width = codecContext->width;
     frame->height = codecContext->height;
-
     av_image_alloc(
-        frame->data, frame->linesize, codecContext->width,
-        codecContext->height, codecContext->pix_fmt, 32
+        frame->data, frame->linesize, codecContext->width, codecContext->height, codecContext->pix_fmt, 32
     );
 
     const auto *shmName = "/vectframe_shm";
     const int shm_fd = shm_open(shmName, O_RDONLY, 0666);
-
-    // auto shmName = "/tmp/vectframe_shm";
-    // const int shm_fd = open(shmName, O_RDONLY);
-
     if (shm_fd == -1) {
         cerr << "Failed to open shared memory: " << shmName << endl;
         return -1;
@@ -218,15 +192,15 @@ int main() {
     }
 
     vector<uint8_t> curr_frame(SHM_SIZE, 0);
-    while (!trackOpen) {
+    while (!videoTrack || !videoTrack->isOpen())
         this_thread::sleep_for(chrono::milliseconds(500));
-    }
+
     timestamp_start = microsecondsSinceEpoch();
 
     while (true) {
         copy_n(shm_ptr, SHM_SIZE, curr_frame.begin());
         convert_to_yuvframe(curr_frame, frame);
-        encodeAndSendFrame(codecContext, frame, track, srReporter);
+        encodeAndSendFrame(codecContext, frame, videoTrack, srReporter);
         this_thread::sleep_for(chrono::milliseconds(16)); // Simulate 50 FPS
     }
 
