@@ -87,7 +87,7 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
         av_packet_unref(packet);
     }
 
-    cout << "Frame encoded and sent" << endl;
+    // cout << "Frame encoded and sent" << endl;
     av_packet_free(&packet);
 }
 
@@ -129,15 +129,19 @@ void handle_offer(string offer_str) {
     packetizer->addToChain(nackResponder);
     videoTrack->setMediaHandler(packetizer);
 
-    dc = pc->createDataChannel("joystick-events");
-    dc->onMessage([](variant<binary, string> message) {
-        if (holds_alternative<string>(message)) {
-            cout << "DataChannel message: " << get<string>(message) << endl;
-            json msg_json = json::parse(get<string>(message));
-            cout << "Type: " << msg_json["type"].get<string>() << endl;
-            cout << "Code: " << msg_json["code"].get<string>() << endl;
-            cout << "Value: " << msg_json["value"].get<string>() << endl;
-        }
+    pc->onDataChannel([](const shared_ptr<DataChannel> &channel) {
+        dc = channel;
+        dc->onMessage([](variant<binary, string> message) {
+            if (holds_alternative<string>(message)) {
+                cout << "DataChannel message: " << get<string>(message) << endl;
+                json msg_json = json::parse(get<string>(message));
+                for (auto &msg : msg_json) {
+                    cout << "Type: " << msg["type"].get<int>() << endl;
+                    cout << "Code: " << msg["code"].get<int>() << endl;
+                    cout << "Value: " << msg["value"].get<int>() << endl;
+                }
+            }
+        });
     });
 
     Description offer(offer_json["sdp"].get<string>(), Description::Type::Offer);
