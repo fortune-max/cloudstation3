@@ -144,8 +144,10 @@ void freeResources(){
     // av_frame_free(&frame); // dont forget to free memory
     // avcodec_free_context(&codecContext);
     // sws_freeContext(sws_ctx);
-    libevdev_uinput_destroy(uidev);
-    libevdev_free(dev);
+    if (uidev != nullptr) {
+        libevdev_uinput_destroy(uidev);
+        libevdev_free(dev);
+    }
 }
 
 void signalHandler(int signum) {
