@@ -9,7 +9,12 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
+#ifdef JOYSTICK_HPP
+#else
 #include "joystick.hpp"
+#endif
+#include <cstdint>
+#include <csignal>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -136,13 +141,9 @@ void handle_offer(string offer_str) {
 
         dc->onMessage([](variant<binary, string> message) {
             if (holds_alternative<string>(message)) {
-                cout << "DataChannel message: " << get<string>(message) << endl;
                 json msg_json = json::parse(get<string>(message));
-                for (auto &msg : msg_json) {
-                    cout << "Type: " << msg["type"].get<int>() << endl;
-                    cout << "Code: " << msg["code"].get<int>() << endl;
-                    cout << "Value: " << msg["value"].get<int>() << endl;
-                }
+                for (auto &msg : msg_json)
+                    write_event(msg["type"].get<int>(), msg["code"].get<int>(), msg["value"].get<int>());
             }
         });
     });
@@ -151,24 +152,24 @@ void handle_offer(string offer_str) {
     pc->setRemoteDescription(offer);
 }
 
-void signalHandler(int signum) {
-    std::cout << "Interrupt signal (" << signum << ") received.\n";
-    freeResources();
-    exit(signum);
-}
-
-void freeResources(){
-    // av_freep(&frame->data[0]);
-    // av_frame_free(&frame); // dont forget to free memory
-    // avcodec_free_context(&codecContext);
-    // sws_freeContext(sws_ctx);
-    libevdev_uinput_destroy(uidev);
-    libevdev_free(dev);
-}
+// void signalHandler(int signum) {
+//     std::cout << "Interrupt signal (" << signum << ") received.\n";
+//     freeResources();
+//     exit(signum);
+// }
+//
+// void freeResources(){
+//     // av_freep(&frame->data[0]);
+//     // av_frame_free(&frame); // dont forget to free memory
+//     // avcodec_free_context(&codecContext);
+//     // sws_freeContext(sws_ctx);
+//     libevdev_uinput_destroy(uidev);
+//     libevdev_free(dev);
+// }
 
 int main() {
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
+    // signal(SIGINT, signalHandler);
+    // signal(SIGTERM, signalHandler);
 
     InitLogger(LogLevel::Info);
 

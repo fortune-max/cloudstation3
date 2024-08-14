@@ -3,11 +3,12 @@ project(frame_streamer)
 set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
+include(FindPkgConfig)
 
 FetchContent_Declare(
         libsrtp
         GIT_REPOSITORY https://github.com/cisco/libsrtp.git
-        GIT_TAG        v2.6.0 # Specify the version of libsrtp you want to use
+        GIT_TAG        v2.5.0 # Specify the version of libsrtp you want to use
 )
 
 FetchContent_Declare(
@@ -34,8 +35,15 @@ find_library(AVUTIL_LIBRARY avutil)
 find_path(SWSCALE_INCLUDE_DIR libswscale/swscale.h)
 find_library(SWSCALE_LIBRARY swscale)
 
-# Include FFmpeg headers
-include_directories(${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${SWSCALE_INCLUDE_DIR})
+pkg_check_modules(LIBEVDEV REQUIRED libevdev)
 
-add_executable(frame_streamer main.cpp)
-target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json srtp2 datachannel ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${SWSCALE_LIBRARY})
+#find_path(LIBEVDEV_INCLUDE_DIR libevdev/libevdev.h)
+#message(STATUS "LIBEVDEV_INCLUDE_DIR: ${LIBEVDEV_INCLUDE_DIR} ${LIBEVDEV_INCLUDE_DIRS}")
+#find_library(LIBEVDEV_LIBRARY evdev)
+
+# Include FFmpeg headers
+include_directories(${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${SWSCALE_INCLUDE_DIR} ${LIBEVDEV_INCLUDE_DIRS})
+
+add_executable(frame_streamer main.cpp
+        joystick.cpp)
+target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json srtp2 datachannel ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${SWSCALE_LIBRARY} ${LIBEVDEV_LIBRARIES})
