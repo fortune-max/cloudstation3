@@ -104,7 +104,7 @@ import { ref, onMounted, watch, computed } from 'vue';
 import gamepadCfgRaw from './ps5_gamepad.cfg.json';
 import { gamepadDiff, transformBtn, transformAxis } from '../utils.ts';
 
-const wsAddr = 'ws://2.tcp.eu.ngrok.io:10244';
+const wsAddr = 'ws://7.tcp.eu.ngrok.io:17135';
 const textBoxValue = ref(wsAddr);
 const gamepadConnected = ref(true);
 const events = ref({});
@@ -120,6 +120,7 @@ const signalingState = ref('');
 
 let peerConnection;
 let signalingServer;
+let dataChannel;
 
 const btnText = computed(() => {
   if (useWebSockets.value) return 'Start!';
@@ -214,6 +215,8 @@ async function makeOffer() {
     video.play();
   };
 
+  dataChannel = peerConnection.createDataChannel('gamepad');
+
   const offer = await peerConnection.createOffer({
     offerToReceiveVideo: true,
   });
@@ -291,7 +294,8 @@ function animate() {
     });
     if (chunk.length){
       console.log('Sent', chunk.length, 'events')
-      // socket.send(JSON.stringify(chunk));
+      if (dataChannel?.readyState === 'open')
+        dataChannel.send(JSON.stringify(chunk));
     };
   }
   oldState = newState;
