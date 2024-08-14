@@ -4,12 +4,11 @@
 #include <nlohmann/json.hpp>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
-
 #include <cstddef>
 #include <iostream>
 #include <memory>
-#include <stdexcept>
 #include <utility>
+#include <algorithm>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -39,9 +38,11 @@ using namespace nlohmann;
 static int64_t frame_number = 0;
 static uint64_t timestamp_start = 0;
 
-uint64_t secondsSinceEpoch() {
-    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+uint64_t microsecondsSinceEpoch() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
+
 
 void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     uint8_t* in_data[4]{};
@@ -71,7 +72,7 @@ void lol(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     }
 }
 
-void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::shared_ptr<rtc::Track> &videoTrack, std::shared_ptr<RtcpSrReporter> &srReporter) {
+void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const std::shared_ptr<rtc::Track> &videoTrack, const std::shared_ptr<RtcpSrReporter> &srReporter) {
     AVPacket* packet = av_packet_alloc();
     if (!packet) {
         std::cerr << "Could not allocate AVPacket" << std::endl;
@@ -94,7 +95,7 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::share
         }
         cout << "Sending frames: " << packet->size << endl;
 
-        uint32_t elapsedSeconds = secondsSinceEpoch() - timestamp_start;
+        const double elapsedSeconds = static_cast<double>(microsecondsSinceEpoch() - timestamp_start) / 1000000;
         uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
         srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp + elapsedTimestamp;
 
@@ -104,30 +105,7 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, std::share
             srReporter->setNeedsToReport();
         }
 
-        vector<byte> pkt_data(packet->size);
-        for (int i = 0; i < packet->size; i++)
-            pkt_data[i] = byte(packet->data[i]);
-
-        // FILE *file = fopen("/tmp/fme/pkt_baseline_nvd.h264", "rb");
-        // fseek(file, 0, SEEK_END);
-        // int file_size = ftell(file);
-        // fseek(file, 0, SEEK_SET);
-        // vector<byte> new_sample(file_size, byte(0));
-        // fread(new_sample.data(), sizeof(byte), file_size, file);
-        // fclose(file);
-        // videoTrack->send(new_sample);
-        // exit(0);
-
-        // videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
-        videoTrack->send(pkt_data);
-
-        // if (packet->size == 11570) {
-            // FILE *file = fopen("/tmp/fme/pkt_baseline2.h264", "ab");
-            // fwrite(packet->data, sizeof(std::byte), packet->size, file);
-            // fclose(file);
-            // exit(0);
-        // }
-        
+        videoTrack->send(reinterpret_cast<std::byte*>(packet->data), packet->size * sizeof(std::byte));
         av_packet_unref(packet);
     }
 }
@@ -193,7 +171,7 @@ int main() {
         }
     });
 
-    ws.open("ws://0.tcp.eu.ngrok.io:10474");
+    ws.open("wss://7.tcp.eu.ngrok.io:17135");
 
     avformat_network_init();
 
@@ -212,7 +190,7 @@ int main() {
         return -1;
     }
 
-    codecContext->bit_rate = 512000;
+    codecContext->bit_rate = 1024000;
     codecContext->width = 1280;
     codecContext->height = 720;
     codecContext->time_base = (AVRational){1, 25};
@@ -221,9 +199,9 @@ int main() {
     codecContext->max_b_frames = 0;
     codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
-    av_opt_set(codecContext->priv_data, "profile", "baseline", 0);
-    av_opt_set(codecContext->priv_data, "level", "3.1", 0);
-    av_opt_set(codecContext->priv_data, "packetization-mode", "1", 0);
+    // av_opt_set(codecContext->priv_data, "profile", "baseline", 0);
+    // av_opt_set(codecContext->priv_data, "level", "3.1", 0);
+    // av_opt_set(codecContext->priv_data, "packetization-mode", "1", 0);
 
 
     if (avcodec_open2(codecContext, codec, nullptr) < 0) {
@@ -269,15 +247,13 @@ int main() {
     while (!trackOpen) {
         this_thread::sleep_for(chrono::milliseconds(500));
     }
-    timestamp_start = secondsSinceEpoch();
+    timestamp_start = microsecondsSinceEpoch();
 
     while (true) {
-        for (int j=0; j<SHM_SIZE; j++)
-            curr_frame[j] = shm_ptr[j];
+        copy_n(shm_ptr, SHM_SIZE, curr_frame.begin());
         lol(curr_frame, frame);
-
         encodeAndSendFrame(codecContext, frame, track, srReporter);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Simulate 25 FPS
+        std::this_thread::sleep_for(std::chrono::milliseconds(30)); // Simulate 33 FPS
     }
 
 
