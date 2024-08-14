@@ -37,13 +37,7 @@ find_library(SWSCALE_LIBRARY swscale)
 
 pkg_check_modules(LIBEVDEV REQUIRED libevdev)
 
-#find_path(LIBEVDEV_INCLUDE_DIR libevdev/libevdev.h)
-#message(STATUS "LIBEVDEV_INCLUDE_DIR: ${LIBEVDEV_INCLUDE_DIR} ${LIBEVDEV_INCLUDE_DIRS}")
-#find_library(LIBEVDEV_LIBRARY evdev)
-
-# Include FFmpeg headers
 include_directories(${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${SWSCALE_INCLUDE_DIR} ${LIBEVDEV_INCLUDE_DIRS})
 
-add_executable(frame_streamer main.cpp
-        joystick.cpp)
+add_executable(frame_streamer main.cpp joystick.cpp)
 target_link_libraries(${PROJECT_NAME} nlohmann_json::nlohmann_json srtp2 datachannel ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${SWSCALE_LIBRARY} ${LIBEVDEV_LIBRARIES})
