@@ -93,6 +93,7 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
 
 WebSocket webSocket;
 shared_ptr<Track> videoTrack = nullptr;
+shared_ptr<DataChannel> dc = nullptr;
 shared_ptr<PeerConnection> pc = nullptr;
 shared_ptr<RtcpSrReporter> srReporter = nullptr;
 
@@ -127,6 +128,17 @@ void handle_offer(string offer_str) {
     auto nackResponder = make_shared<RtcpNackResponder>();
     packetizer->addToChain(nackResponder);
     videoTrack->setMediaHandler(packetizer);
+
+    dc = pc->createDataChannel("joystick-events");
+    dc->onMessage([](variant<binary, string> message) {
+        if (holds_alternative<string>(message)) {
+            cout << "DataChannel message: " << get<string>(message) << endl;
+            json msg_json = json::parse(get<string>(message));
+            cout << "Type: " << msg_json["type"].get<string>() << endl;
+            cout << "Code: " << msg_json["code"].get<string>() << endl;
+            cout << "Value: " << msg_json["value"].get<string>() << endl;
+        }
+    });
 
     Description offer(offer_json["sdp"].get<string>(), Description::Type::Offer);
     pc->setRemoteDescription(offer);
@@ -201,7 +213,7 @@ int main() {
         copy_n(shm_ptr, SHM_SIZE, curr_frame.begin());
         convert_to_yuvframe(curr_frame, frame);
         encodeAndSendFrame(codecContext, frame, videoTrack, srReporter);
-        this_thread::sleep_for(chrono::milliseconds(16)); // Simulate 50 FPS
+        this_thread::sleep_for(chrono::milliseconds(10)); // At most 100 FPS
     }
 
     // av_freep(&frame->data[0]);
