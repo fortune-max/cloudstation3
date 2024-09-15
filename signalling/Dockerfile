@@ -1,4 +1,4 @@
-FROM nginx:1.17.1
+FROM nginx:1.20.1
 
 # Install necessary packages
 RUN apt-get update && \
