@@ -2,7 +2,7 @@ FROM ubuntu:20.04
 
 # Install necessary packages
 RUN apt-get update && \
-    apt-get install -y nginx openssh-server && \
+    apt-get install -y nginx openssh-server python3-certbot-nginx certbot && \
     apt-get clean
 
 # Generate SSH host keys
@@ -30,7 +30,7 @@ COPY /ngrok /usr/bin/ngrok
 RUN chmod +x /usr/bin/ngrok
 
 # Expose ports
-EXPOSE 80 22
+EXPOSE 80
 
 # Start nginx, sshd, telnetd, and ngrok
 CMD ["/bin/sh", "-c", "service nginx start && /usr/sbin/sshd && ngrok tcp 22"]
