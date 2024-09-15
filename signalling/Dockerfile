@@ -7,7 +7,8 @@ RUN ssh-keygen -A
 RUN echo "root:docker" | chpasswd
 
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config
 
 COPY /dist/ /usr/share/nginx/html
 
