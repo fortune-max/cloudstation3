@@ -2,11 +2,14 @@ FROM nginx:1.20.1
 
 # Install necessary packages
 RUN apt-get update && \
-    apt-get install -y busybox openssh-server && \
+    apt-get install -y openssh-server && \
     apt-get clean
 
 # Generate SSH host keys
 RUN ssh-keygen -A
+
+# Create privilege separation directory for SSH
+RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
 
 # Set root password
 RUN echo "root:docker" | chpasswd
@@ -30,4 +33,4 @@ RUN chmod +x /usr/bin/ngrok
 EXPOSE 80 22 23
 
 # Start nginx, sshd, telnetd, and ngrok
-CMD ["/bin/sh", "-c", "nginx && /usr/sbin/sshd && telnetd -l /bin/sh && ngrok tcp 22"]
+CMD ["/bin/sh", "-c", "nginx && /usr/sbin/sshd && ngrok tcp 22"]
