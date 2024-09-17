@@ -22,4 +22,4 @@ COPY /ngrok /usr/bin/ngrok
 RUN chmod +x /usr/bin/ngrok
 
 # CMD ["/bin/sh", "-c", "/usr/sbin/sshd && ngrok tcp 22 > /dev/null 2>&1 & python signaling_server.py 443 certs/fullchain.pem certs/privkey.pem"]
-CMD ["/bin/sh", "-c", "/usr/sbin/sshd && ngrok tcp 22 > /dev/null 2>&1 & python signaling_server.py 80"]
+CMD ["/bin/sh", "-c", "/usr/sbin/sshd && ngrok tcp 22 > /dev/null 2>&1 & python signaling_server.py 0.0.0.0:80"]
