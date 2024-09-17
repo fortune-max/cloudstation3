@@ -1,36 +1,12 @@
-FROM ubuntu:24.04
+FROM python:3.8-slim
 
-# Install necessary packages
-RUN apt-get update && \
-    apt-get install -y nginx openssh-server python3-certbot-nginx certbot && \
-    apt-get clean
+WORKDIR /app
+COPY requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
 
-# Generate SSH host keys
-RUN ssh-keygen -A
+COPY /ws_cloudstation_cert ./certs
+COPY signaling_server.py .
 
-# Create privilege separation directory for SSH
-RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
+EXPOSE 443
 
-# Set root password
-RUN echo "root:docker" | chpasswd
-
-# Ensure SSH allows root login and password authentication
-RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
-    echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config
-
-# Copy the application files
-COPY /dist/ /usr/share/nginx/html
-
-# Copy ngrok configuration and binary
-COPY /ngrok.yml /root/.config/ngrok/ngrok.yml
-COPY /ngrok /usr/bin/ngrok
-
-# Make ngrok executable
-RUN chmod +x /usr/bin/ngrok
-
-# Expose ports
-EXPOSE 80
-
-# Start nginx, sshd, telnetd, and ngrok
-CMD ["/bin/sh", "-c", "service nginx start && /usr/sbin/sshd && ngrok tcp 22"]
+CMD ["python", "signaling_server.py", "443", "certs/fullchain.pem", "certs/privkey.pem"]
