@@ -1,79 +1,95 @@
-#!/usr/bin/env python
-#
-# Python signaling server example for libdatachannel
-# Copyright (c) 2020 Paul-Louis Ageneau
-#
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-
 import sys
-import ssl
 import json
 import asyncio
-import logging
 import websockets
-
-
-logger = logging.getLogger('websockets')
-logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler(sys.stdout))
+from typing import Optional
+from websockets.legacy.server import WebSocketServerProtocol
 
 clients = {}
+curr_client_id = 0
+server: Optional[WebSocketServerProtocol] = None
+
+async def handle_server(websocket: WebSocketServerProtocol):
+    global server
+    if server:
+        await websocket.send("Server already exists")
+        return
+    server = websocket
+    await server.send("Server created")
+    print("Server created")
+    # handle pending messages
+    for client in clients.values():
+        offer_msg = {"client_id": client["client_id"], "offer": client["offer"]}
+        await server.send(json.dumps(offer_msg))
+    while True:
+        try:
+            msg: str = await server.recv()
+            print(f"Server << {msg}")
+            msg_json: dict = json.loads(msg)
+            client_id, answer = msg_json["client_id"], msg_json["answer"]
+            await clients[client_id]["socket"].send(answer)
+            await clients[client_id]["socket"].close()
+            clients.pop(client_id)
+        except websockets.exceptions.ConnectionClosedOK:
+            print("Client closed before send")
+            break
+    server = None
+    print("Server closed")
+
+async def handle_client(websocket: WebSocketServerProtocol):
+    global curr_client_id; curr_client_id += 1
+    client_id = curr_client_id
+    print(f"Client {client_id} connected")
+
+    msg: str = await websocket.recv()
+    print(f"Client {client_id} << {msg}")
+    clients[client_id] = {
+        "client_id": client_id,
+        "socket": websocket,
+        "offer": msg
+    }
+    if server:
+        offer_msg = {"client_id": client_id, "offer": msg}
+        await server.send(json.dumps(offer_msg))
+        await websocket.wait_closed()
+        print(f"closed {offer_msg['client_id']}")
+    else:
+        print("waiting for server")
+        await websocket.wait_closed()
+        print(f"closed {offer_msg['client_id']}")
 
 
-async def handle_websocket(websocket, path):
-    client_id = None
-    try:
-        splitted = path.split('/')
-        splitted.pop(0)
-        client_id = splitted.pop(0)
-        print('Client {} connected'.format(client_id))
+async def handle_reset(websocket: WebSocketServerProtocol):
+    print("Resetting server")
+    global server, clients, curr_client_id
+    if clients:
+        for client in clients.values():
+            await client["socket"].close()
+        clients = {}
+    if server:
+        await server.close()
+        server = None
+    curr_client_id = 0
 
-        clients[client_id] = websocket
-        while True:
-            data = await websocket.recv()
-            print('Client {} << {}'.format(client_id, data))
-            message = json.loads(data)
-            destination_id = message['id']
-            destination_websocket = clients.get(destination_id)
-            if destination_websocket:
-                message['id'] = client_id
-                data = json.dumps(message)
-                print('Client {} >> {}'.format(destination_id, data))
-                await destination_websocket.send(data)
-            else:
-                print('Client {} not found'.format(destination_id))
-
-    except Exception as e:
-        print(e)
-
-    finally:
-        if client_id:
-            del clients[client_id]
-            print('Client {} disconnected'.format(client_id))
-
+async def handle_websocket(websocket: WebSocketServerProtocol, path: str):
+    if path == '/server':
+        print("server")
+        await handle_server(websocket)
+    elif path == '/client':
+        print("client")
+        await handle_client(websocket)
+    elif path == '/reset':
+        print("reset")
+        await handle_reset(websocket)
 
 async def main():
-    # Usage: ./server.py [[host:]port] [SSL certificate file]
+    # Usage: ./server.py [[host:]port]
     endpoint_or_port = sys.argv[1] if len(sys.argv) > 1 else "8000"
-    ssl_cert = sys.argv[2] if len(sys.argv) > 2 else None
-    ssl_key = sys.argv[3] if len(sys.argv) > 3 else "localhost+2-key.pem"
-
     endpoint = endpoint_or_port if ':' in endpoint_or_port else "127.0.0.1:" + endpoint_or_port
+    print(f'Listening on {endpoint}')
 
-    if ssl_cert:
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        print ("ssl_cert: ", ssl_cert)
-        print ("ssl_key: ", ssl_key)
-        ssl_context.load_cert_chain(ssl_cert, keyfile=ssl_key)
-    else:
-        ssl_context = None
-
-    print('Listening on {}'.format(endpoint))
     host, port = endpoint.rsplit(':', 1)
-
-    server = await websockets.serve(handle_websocket, host, int(port), ssl=ssl_context)
+    server = await websockets.serve(handle_websocket, host, int(port))
     await server.wait_closed()
 
 
