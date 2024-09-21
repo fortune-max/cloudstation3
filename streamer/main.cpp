@@ -33,6 +33,16 @@ static int64_t frame_number = 0;
 static uint64_t timestamp_start = 0;
 static SwsContext* sws_ctx = nullptr;
 
+struct Receiver {
+    shared_ptr<Track> videoTrack;
+    shared_ptr<DataChannel> dc;
+    shared_ptr<PeerConnection> pc;
+    shared_ptr<RtcpSrReporter> srReporter;
+};
+
+vector<shared_ptr<Receiver>> receivers;
+
+WebSocket webSocket;
 
 uint64_t microsecondsSinceEpoch() {
     return chrono::duration_cast<chrono::microseconds>(chrono::system_clock::now().time_since_epoch()).count();
@@ -54,7 +64,7 @@ void convert_to_yuvframe(vector<uint8_t> &frame_data, AVFrame *out_frame) {
     out_frame->pts = frame_number++ * AV_TIME_BASE;
 }
 
-void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shared_ptr<Track> &videoTrack, const shared_ptr<RtcpSrReporter> &srReporter) {
+void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame) {
     AVPacket* packet = av_packet_alloc();
     int ret = avcodec_send_frame(codecContext, frame);
 
@@ -68,15 +78,22 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
         }
 
         const double elapsedSeconds = static_cast<double>(microsecondsSinceEpoch() - timestamp_start) / 1000000;
-        uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
-        srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp + elapsedTimestamp;
 
-        auto reportElapsedTimestamp = srReporter->rtpConfig->timestamp - srReporter->lastReportedTimestamp();
+        for (auto receiver: receivers) {
+            auto srReporter = receiver->srReporter;
+            auto videoTrack = receiver->videoTrack;
 
-        if (srReporter->rtpConfig->timestampToSeconds(reportElapsedTimestamp) >= 1)
-            srReporter->setNeedsToReport();
+            uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
+            srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp + elapsedTimestamp;
 
-        videoTrack->send(reinterpret_cast<byte*>(packet->data), packet->size * sizeof(byte));
+            auto reportElapsedTimestamp = srReporter->rtpConfig->timestamp - srReporter->lastReportedTimestamp();
+
+            if (srReporter->rtpConfig->timestampToSeconds(reportElapsedTimestamp) >= 1)
+                srReporter->setNeedsToReport();
+
+            videoTrack->send(reinterpret_cast<byte*>(packet->data), packet->size * sizeof(byte));
+        }
+
         av_packet_unref(packet);
     }
 
@@ -84,22 +101,16 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame, const shar
     av_packet_free(&packet);
 }
 
-WebSocket webSocket;
-shared_ptr<Track> videoTrack = nullptr;
-shared_ptr<DataChannel> dc = nullptr;
-shared_ptr<PeerConnection> pc = nullptr;
-shared_ptr<RtcpSrReporter> srReporter = nullptr;
-
-void handle_offer(const string &offer_str) {
+void handle_offer(const string &offer_str, int client_id) {
     json offer_json = json::parse(offer_str);
     Configuration config;
     config.iceServers.emplace_back("stun.l.google.com:19302");
-    pc = make_shared<PeerConnection>(config);
+    auto pc = make_shared<PeerConnection>(config);
     pc->onGatheringStateChange(
         [](const PeerConnection::GatheringState state) {
             if (state == PeerConnection::GatheringState::Complete) {
                 const auto description = pc->localDescription();
-                const json message = {{"type", "answer"}, {"sdp", string(description.value())}};
+                const json message = {"client_id", {{"type", "answer"}, {"sdp", string(description.value())}}};
                 string answer = message.dump();
                 cout << answer << endl;
                 webSocket.send(answer);
@@ -112,19 +123,21 @@ void handle_offer(const string &offer_str) {
     auto videoDesc = Description::Video(cname, Description::Direction::SendOnly);
     videoDesc.addH264Codec(106);
     videoDesc.addSSRC(ssrc, cname);
-    videoTrack = pc->addTrack(videoDesc);
+    auto videoTrack = pc->addTrack(videoDesc);
 
     auto rtpConfig = make_shared<RtpPacketizationConfig>(ssrc, cname, 106, H264RtpPacketizer::defaultClockRate);
     auto packetizer = make_shared<H264RtpPacketizer>(NalUnit::Separator::LongStartSequence, rtpConfig);
-    srReporter = make_shared<RtcpSrReporter>(rtpConfig);
+    auto srReporter = make_shared<RtcpSrReporter>(rtpConfig);
     packetizer->addToChain(srReporter);
     auto nackResponder = make_shared<RtcpNackResponder>();
     packetizer->addToChain(nackResponder);
     videoTrack->setMediaHandler(packetizer);
 
+    shared_ptr<DataChannel> dc;
     pc->onDataChannel([](const shared_ptr<DataChannel> &channel) {
         dc = channel;
-        create_joystick();
+        // todo manage mult joysticks
+        if (receivers.empty()) create_joystick();
 
         dc->onMessage([](variant<binary, string> message) {
             if (holds_alternative<string>(message)) {
@@ -133,10 +146,15 @@ void handle_offer(const string &offer_str) {
                     write_event(msg["type"].get<int>(), msg["code"].get<int>(), msg["value"].get<int>());
             }
         });
+
+        newReceiver.dc = dc;
     });
 
     Description offer(offer_json["sdp"].get<string>(), Description::Type::Offer);
     pc->setRemoteDescription(offer);
+
+    Receiver newReceiver = {videoTrack, dc, pc, srReporter};
+    receivers.push_back(make_shared<Receiver>(newReceiver));
 }
 
 void freeResources(){
@@ -166,11 +184,11 @@ int main() {
     webSocket.onMessage([](variant<binary, string> message) {
         if (holds_alternative<string>(message)) {
             auto msg_json = json::parse(get<string>(message));
-            auto type = msg_json["type"].get<string>();
-            if (type == "offer") handle_offer(get<string>(message));
+            int client_id = msg_json["client_id"].get<int>();
+            handle_offer(msg_json["offer"].get<string>(), client_id);
         }
     });
-    webSocket.open("ws://7.tcp.eu.ngrok.io:17135");
+    webSocket.open("wss://ws.cloudstation3.com/server");
 
     avformat_network_init();
 
@@ -218,15 +236,18 @@ int main() {
     }
 
     vector<uint8_t> curr_frame(SHM_SIZE, 0);
-    while (!videoTrack || !videoTrack->isOpen())
-        this_thread::sleep_for(chrono::milliseconds(500));
 
-    timestamp_start = microsecondsSinceEpoch();
+    // maybe this can be on recording start? and we still have while loop run until if there is no receivers.length
+    // timestamp_start = microsecondsSinceEpoch();
 
     while (true) {
+        while (receivers.empty())
+            this_thread::sleep_for(chrono::milliseconds(500));
+        if (timestamp_start == 0)
+            timestamp_start = microsecondsSinceEpoch();
         copy_n(shm_ptr, SHM_SIZE, curr_frame.begin());
         convert_to_yuvframe(curr_frame, frame);
-        encodeAndSendFrame(codecContext, frame, videoTrack, srReporter);
+        encodeAndSendFrame(codecContext, frame);
         this_thread::sleep_for(chrono::milliseconds(10)); // At most 100 FPS
     }
 }
