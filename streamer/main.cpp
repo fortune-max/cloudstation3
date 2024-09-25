@@ -82,6 +82,11 @@ void encodeAndSendFrame(AVCodecContext* codecContext, AVFrame* frame) {
         for (auto receiver: receivers) {
             auto srReporter = receiver->srReporter;
             auto videoTrack = receiver->videoTrack;
+            cout << videoTrack->isOpen() << endl;
+            if (!videoTrack->isOpen()) {
+                cout << "Open vid track continuing" << endl;
+                continue;
+            }
 
             uint32_t elapsedTimestamp = srReporter->rtpConfig->secondsToTimestamp(elapsedSeconds);
             srReporter->rtpConfig->timestamp = srReporter->rtpConfig->startTimestamp + elapsedTimestamp;
@@ -107,10 +112,17 @@ void handle_offer(const string &offer_str, int client_id) {
     config.iceServers.emplace_back("stun.l.google.com:19302");
     auto pc = make_shared<PeerConnection>(config);
     pc->onGatheringStateChange(
-        [](const PeerConnection::GatheringState state) {
+        [&pc, &client_id](const PeerConnection::GatheringState state) {
             if (state == PeerConnection::GatheringState::Complete) {
                 const auto description = pc->localDescription();
-                const json message = {"client_id", {{"type", "answer"}, {"sdp", string(description.value())}}};
+                const json answer_section = {
+                    {"type", "answer"},
+                    {"sdp", string(description.value())}
+                };
+                const json message = {
+                    {"client_id", client_id},
+                    {"answer", answer_section}
+                };
                 string answer = message.dump();
                 cout << answer << endl;
                 webSocket.send(answer);
@@ -134,7 +146,7 @@ void handle_offer(const string &offer_str, int client_id) {
     videoTrack->setMediaHandler(packetizer);
 
     shared_ptr<DataChannel> dc;
-    pc->onDataChannel([](const shared_ptr<DataChannel> &channel) {
+    pc->onDataChannel([&dc](const shared_ptr<DataChannel> &channel) {
         dc = channel;
         // todo manage mult joysticks
         if (receivers.empty()) create_joystick();
@@ -146,8 +158,6 @@ void handle_offer(const string &offer_str, int client_id) {
                     write_event(msg["type"].get<int>(), msg["code"].get<int>(), msg["value"].get<int>());
             }
         });
-
-        newReceiver.dc = dc;
     });
 
     Description offer(offer_json["sdp"].get<string>(), Description::Type::Offer);
@@ -183,7 +193,9 @@ int main() {
     webSocket.onOpen([]() { cout << "WebSocket open" << endl; });
     webSocket.onMessage([](variant<binary, string> message) {
         if (holds_alternative<string>(message)) {
-            auto msg_json = json::parse(get<string>(message));
+            string rcvd = get<string>(message);
+            if (rcvd == "Server created") return;
+            auto msg_json = json::parse(rcvd);
             int client_id = msg_json["client_id"].get<int>();
             handle_offer(msg_json["offer"].get<string>(), client_id);
         }
