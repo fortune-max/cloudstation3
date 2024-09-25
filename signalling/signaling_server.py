@@ -27,7 +27,7 @@ async def handle_server(websocket: WebSocketServerProtocol):
             print(f"Server << {msg}")
             msg_json: dict = json.loads(msg)
             client_id, answer = msg_json["client_id"], msg_json["answer"]
-            await clients[client_id]["socket"].send(answer)
+            await clients[client_id]["socket"].send(json.dumps(answer))
             await clients[client_id]["socket"].close()
             clients.pop(client_id)
         except websockets.exceptions.ConnectionClosedOK:
