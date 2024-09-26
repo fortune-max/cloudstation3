@@ -68,7 +68,7 @@ async def handle_client(websocket: WebSocketServerProtocol):
     else:
         print("waiting for server")
         await websocket.wait_closed()
-        print(f"closed {offer_msg['client_id']}")
+        print(f"closed client {client_id}, server never arrived")
 
 
 async def handle_reset():
