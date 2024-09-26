@@ -51,6 +51,9 @@ async def handle_client(websocket: WebSocketServerProtocol):
     except websockets.exceptions.ConnectionClosedOK:
         print(f"Client {client_id} closed before send")
         return
+    except websockets.exceptions.ConnectionClosedError:
+        print(f"Client {client_id} closed with error (probably reset handler called)")
+        return
     print(f"Client {client_id} << {msg}")
     clients[client_id] = {
         "client_id": client_id,
