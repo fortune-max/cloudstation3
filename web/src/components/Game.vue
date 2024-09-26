@@ -217,10 +217,9 @@ async function makeOffer() {
 
   dataChannel = peerConnection.createDataChannel('gamepad');
 
-  const offer = await peerConnection.createOffer({
-    offerToReceiveVideo: true,
-  });
-  await peerConnection.setLocalDescription(offer);
+  peerConnection.addTransceiver('video', { direction: 'recvonly' });
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);  
   await waitGatheringComplete();
   if (useWebSockets.value)
     sendData(peerConnection.localDescription);
