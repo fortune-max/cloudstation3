@@ -28,6 +28,10 @@ async def handle_server(websocket: WebSocketServerProtocol):
             print("Server closed before send")
             handle_reset()
             break
+        except websockets.exceptions.ConnectionClosedError:
+            print("Server closed with error (probably terminated)")
+            handle_reset()
+            break
         print(f"Server << {msg}")
         msg_json: dict = json.loads(msg)
         client_id, answer = msg_json["client_id"], msg_json["answer"]
