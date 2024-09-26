@@ -24,9 +24,14 @@ async def handle_server(websocket: WebSocketServerProtocol):
     while True:
         try:
             msg: str = await server.recv()
-            print(f"Server << {msg}")
-            msg_json: dict = json.loads(msg)
-            client_id, answer = msg_json["client_id"], msg_json["answer"]
+        except websockets.exceptions.ConnectionClosedOK:
+            print("Server closed before send")
+            handle_reset()
+            break
+        print(f"Server << {msg}")
+        msg_json: dict = json.loads(msg)
+        client_id, answer = msg_json["client_id"], msg_json["answer"]
+        try:
             await clients[client_id]["socket"].send(json.dumps(answer))
             await clients[client_id]["socket"].close()
             clients.pop(client_id)
@@ -41,7 +46,11 @@ async def handle_client(websocket: WebSocketServerProtocol):
     client_id = curr_client_id
     print(f"Client {client_id} connected")
 
-    msg: str = await websocket.recv()
+    try:
+        msg: str = await websocket.recv()
+    except websockets.exceptions.ConnectionClosedOK:
+        print(f"Client {client_id} closed before send")
+        return
     print(f"Client {client_id} << {msg}")
     clients[client_id] = {
         "client_id": client_id,
@@ -59,7 +68,7 @@ async def handle_client(websocket: WebSocketServerProtocol):
         print(f"closed {offer_msg['client_id']}")
 
 
-async def handle_reset(websocket: WebSocketServerProtocol):
+async def handle_reset():
     print("Resetting server")
     global server, clients, curr_client_id
     if clients:
@@ -80,7 +89,7 @@ async def handle_websocket(websocket: WebSocketServerProtocol, path: str):
         await handle_client(websocket)
     elif path == '/reset':
         print("reset")
-        await handle_reset(websocket)
+        await handle_reset()
 
 async def main():
     # Usage: ./server.py [[host:]port]
