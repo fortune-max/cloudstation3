@@ -2,6 +2,7 @@
 
 Play PS3 games in a browser: a patched RPCS3 emulator renders on a Linux GPU box, a C++ streamer encodes the frames with NVENC and sends them over WebRTC, and the browser's Gamepad API sends controller input back over a DataChannel to a virtual uinput joystick.
 
+- **Context:** my MEng capstone at Harbour.Space University (2024). The input-bridge prototype dates from Nov 2023.
 - **Demo video:** https://youtu.be/Ei86aeKOFcs
 - **Player UI (static build):** https://cloudstation3.vercel.app. It only plays something while a streamer host is online.
 
